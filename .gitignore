@@ -1,0 +1,27 @@
+# Dependency directories
+node_modules/
+
+# Local configuration files
+.env
+.env.local
+.env.*.local
+
+# Browser binary directories
+bin/
+
+# Persistent user login session (contains active credentials/cookies)
+user_session/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Check-in screenshots
+checkin-success.png
+checkin-failed.png
+*.png
+
+# Temporary scratch folder
+scratch/
