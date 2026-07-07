@@ -1,0 +1,20 @@
+# Ignore dependency folders and local binaries
+node_modules/
+bin/
+
+# Ignore sensitive data and user session
+.env
+user_session/
+
+# Ignore version control files and logs
+.git/
+.gitignore
+*.log
+npm-debug.log*
+
+# Ignore temporary screenshot results
+*.png
+
+# Ignore IDE configuration files
+.vscode/
+.idea/

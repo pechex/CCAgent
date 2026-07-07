@@ -1,82 +1,120 @@
-# Creality Cloud Daily Check-in Bot (WSL + invisible_playwright)
+# Creality Cloud Daily Check-in Bot
 
-This is a Node.js automation script built to run inside a **WSL (Windows Subsystem for Linux)** environment. It logs into Creality Cloud and completes the daily check-in to accumulate reward points.
+This is a Node.js automation script designed to automatically perform the daily check-in on Creality Cloud to accumulate reward points.
 
-To bypass sophisticated anti-scraping and fingerprinting systems (like Cloudflare/DataDome), it utilizes a patched version of Firefox from the [invisible_playwright](https://github.com/feder-cr/invisible_playwright) project.
-
----
-
-## Prerequisites
-
-1.  **Node.js**: Installed in your WSL environment (preferably via [NVM](https://github.com/nvm-sh/nvm)).
-2.  **WSL GUI (WSLg)**: Required for the first-time manual login. This is enabled by default in Windows 11 and recent Windows 10 updates.
-3.  **System dependencies**: Running Firefox in WSL requires GTK and other X11/Wayland libraries. If they are not already installed, run the following inside your WSL console:
-    ```bash
-    sudo apt-get update && sudo apt-get install -y libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 libxcomposite1 libasound2 libpangocairo-1.0-0 libatk1.0-0 libcaca0
-    ```
+To bypass anti-bot and fingerprinting systems (like Cloudflare/DataDome), it utilizes a patched version of Firefox from the [invisible_playwright](https://github.com/feder-cr/invisible_playwright) project.
 
 ---
 
-## Installation & Setup
+## 🚀 Recommended Setup: Docker (Zero manual dependencies)
 
-1.  **Install project dependencies**:
-    ```bash
-    npm install
-    ```
+This method packages all system dependencies and the custom browser automatically. It is ideal for running in the background, VPS, NAS, or personal servers.
 
-2.  **Download the patched Firefox binary**:
-    Run the download script in WSL to fetch and unpack the custom `invisible_firefox` binary for Linux:
-    ```bash
-    bash download-browser.sh
-    ```
-    This downloads the browser and places it inside a `./bin/` folder.
+### Prerequisites
+- **Docker** and **Docker Desktop** installed (if on Windows, with WSL integration enabled).
 
-3.  **Configure environment variables**:
-    Rename or edit `.env` if you wish to change timezone or headless modes:
-    ```ini
-    STEALTH_TIMEZONE=America/New_York
-    STEALTH_SEED=42
-    HEADLESS=true
-    ```
+### Run Options
 
----
+You can run the Docker container in two ways:
 
-## Usage
+#### Option A: Cloning the Repository (For development or local building)
+If you clone this repository, the [docker-compose.yml](file:///c:/Users/Andres/Repo/CCAgent/docker-compose.yml) file uses the `build: .` directive to compile the container locally with your code.
 
-### 1. Manual Login (First Time Only)
-
-To store your session cookies and authentication tokens:
-```bash
-npm run login
-```
-*   This will launch a visible Firefox window from WSL onto your Windows desktop.
-*   Log into Creality Cloud manually (using email, phone, or third-party OAuth).
-*   Solve any CAPTCHAs required.
-*   Once successfully logged in, return to your terminal and press **Enter** to save the session and close the browser.
-
-Your session is stored locally in the `./user_session` directory.
-
-### 2. Daily Check-in
-
-Run the check-in script:
-```bash
-npm run checkin
-```
-*   By default, this runs in **headless mode** (no browser window opens).
-*   It navigates to `https://www.crealitycloud.com/check-in`, detects your login state using the saved session, and clicks the check-in button.
-*   A confirmation screenshot is saved as `checkin-success.png` (or `checkin-failed.png` if it fails).
-
-You can automate this script to run daily using **Cron** in WSL or **Windows Task Scheduler** calling WSL:
-```bash
-# Example cron entry to run daily at 8:00 AM (make sure Node/NVM PATH is fully resolved in cron)
-0 8 * * * cd /mnt/c/Users/Andres/Repo/CCAgent && ~/.nvm/versions/node/v24.18.0/bin/node checkin.js >> checkin.log 2>&1
+#### Option B: Using the Published Image (Without cloning the repository)
+If you want to spin it up on a remote server or NAS in 10 seconds without downloading the code, you only need to create a `docker-compose.yml` file with this content and run the same commands:
+```yaml
+version: '3.8'
+services:
+  cc-checkin:
+    image: pechex/cc-checkin:latest
+    container_name: cc-checkin
+    ports:
+      - "8080:8080"
+    environment:
+      - HEADLESS=true
+      - STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
+      - STEALTH_SEED=42
+    volumes:
+      - ./user_session:/app/user_session
+    stdin_open: true
+    tty: true
 ```
 
 ---
 
-## Testing
+### Usage Steps (Applies to both options)
 
-You can run the unit and integration tests using Vitest:
+#### 1. Initial Login Session Setup (Save Session)
+Since manual CAPTCHA solving and initial login are required the first time:
+
+1. Run the container interactively while mapping the ports for noVNC:
+   ```bash
+   docker compose run --rm -it --service-ports cc-checkin npm run login
+   ```
+2. Open your web browser on the host machine and go to: **`http://localhost:8080`**
+3. Click **Connect** on the noVNC interface. You will see the Firefox browser running inside the container.
+4. Log into Creality Cloud manually.
+5. Return to your terminal and press **ENTER**. The login session cookies will be saved locally and persistently in the `./user_session` folder.
+
+#### 2. Run Daily Check-in
+Once the session is saved, you can run the daily check-in in the background:
+```bash
+docker compose run --rm cc-checkin
+```
+*(Optional: For optimal resource usage, make sure `HEADLESS=true` is set in your [docker-compose.yml](file:///c:/Users/Andres/Repo/CCAgent/docker-compose.yml) so the browser runs completely hidden and fast).*
+
+#### 3. Automation with Cron
+You can automate the check-in on your server or host system by adding a cron job (`crontab -e`):
+```bash
+# Example: Run every day at 8:00 AM
+0 8 * * * cd /path/to/CCAgent && /usr/bin/docker compose run --rm cc-checkin >> checkin.log 2>&1
+```
+
+---
+
+## 🛠️ Alternative Setup: Manual Installation (WSL)
+
+If you prefer to develop locally or not use Docker, you can run the application directly within your WSL environment.
+
+### Prerequisites
+1. **Node.js**: Installed in your WSL environment (preferably via NVM).
+2. **WSL GUI (WSLg)**: Required to render the interactive browser window on the first login.
+3. **System Dependencies**: Run inside your WSL console:
+   ```bash
+   sudo apt-get update && sudo apt-get install -y libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 libxcomposite1 libasound2 libpangocairo-1.0-0 libatk1.0-0 libcaca0
+   ```
+
+### Setup & Installation
+1. Install Node.js dependencies:
+   ```bash
+   npm install
+   ```
+2. Download the custom stealth Firefox browser:
+   ```bash
+   bash download-browser.sh
+   ```
+3. Create a `.env` file to configure your timezone and headless mode:
+   ```ini
+   STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
+   STEALTH_SEED=42
+   HEADLESS=false # false for login, true for daily check-in
+   ```
+
+### Local Usage
+- **Manual Login:** `npm run login` (opens the browser window via WSLg, log in, and press ENTER in the terminal).
+- **Daily Check-in:** `npm run checkin`.
+
+---
+
+## 🧪 Unit Testing
+You can run the integration and unit tests using Vitest either via Docker or locally:
+
+**With Docker:**
+```bash
+docker compose run --rm cc-checkin npm test
+```
+
+**Locally:**
 ```bash
 npm test
 ```

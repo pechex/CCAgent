@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  cc-checkin:
+    build: .
+    image: pechex/cc-checkin:latest
+    container_name: cc-checkin
+    ports:
+      - "8080:8080"
+    environment:
+      # If running login, HEADLESS must be false to render in Xvfb.
+      # For daily check-in in the background, it can be set to true to optimize resources.
+      - HEADLESS=false
+      - STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
+      - STEALTH_SEED=42
+    volumes:
+      # Persist user login session across container runs
+      - ./user_session:/app/user_session
+    stdin_open: true # Keep stdin open (equivalent to -i)
+    tty: true        # Enable tty terminal (equivalent to -t)
