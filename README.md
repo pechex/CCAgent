@@ -52,7 +52,9 @@ Since manual CAPTCHA solving and initial login are required the first time:
    ```bash
    docker compose run --rm -it --service-ports cc-checkin npm run login
    ```
-2. Open your web browser on the host machine and go to: **`http://localhost:8080`**
+2. Open your web browser and navigate to the noVNC web interface:
+   - **Local machine:** **`http://localhost:8080`**
+   - **Remote server:** **`http://<your-server-ip>:8080`** *(To find your server IP, run `hostname -I` on the server).*
 3. Click **Connect** on the noVNC interface. You will see the Firefox browser running inside the container.
 4. Log into Creality Cloud manually.
 5. Return to your terminal and press **ENTER**. The login session cookies will be saved locally and persistently in the `./user_session` folder.

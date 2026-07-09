@@ -20,9 +20,14 @@ sleep 1
 echo "Starting noVNC proxy on port 8080..."
 websockify --web /usr/share/novnc 8080 localhost:5900 > /dev/null 2>&1 &
 
-echo "========================================================="
-echo " noVNC web interface is running on: http://localhost:8080 "
-echo "========================================================="
+# Only print the access URL message if running the login command
+if [[ "$*" == *"login"* ]]; then
+  echo "========================================================="
+  echo " noVNC web interface is running on: http://localhost:8080 "
+  echo " If running on a remote server, use: "
+  echo " http://<your-server-ip>:8080 "
+  echo "========================================================="
+fi
 
 # Execute the main command passed to docker
 exec "$@"

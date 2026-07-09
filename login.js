@@ -8,6 +8,10 @@ async function main() {
   console.log('This will launch the custom Firefox browser in GUI mode.');
   console.log('Please log in manually on the page that opens.');
   console.log('Once logged in, return here and press [Enter] to exit.');
+  console.log('');
+  console.log('To access the browser interface:');
+  console.log('  - Local runs: http://localhost:8080');
+  console.log('  - Remote runs: http://<your-server-ip>:8080');
   console.log('=====================================================');
 
   let browserInfo;
