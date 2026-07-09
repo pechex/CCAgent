@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     x11vnc \
     novnc \
     websockify \
+    apprise \
     && rm -rf /var/lib/apt/lists/*
 
 # Symbolic link from vnc.html to index.html so noVNC loads at root (http://localhost:8080)

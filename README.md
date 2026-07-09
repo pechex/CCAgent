@@ -106,6 +106,66 @@ If you prefer to develop locally or not use Docker, you can run the application 
 
 ---
 
+## 🔔 Notifications (Apprise)
+
+The bot supports sending daily status notifications (including check-in points and raffle prizes won) using [Apprise](https://github.com/caronc/apprise).
+
+### 1. Enabling Notifications
+To enable notifications, define the `APPRISE_URL` environment variable in your `.env` file (for local runs) or under the `environment` section in your `docker-compose.yml` (for Docker runs):
+
+```ini
+# Example for .env
+APPRISE_URL=tgram://bottoken/chatid
+```
+
+Multiple notification services can be configured by separating their URLs with a comma:
+```ini
+APPRISE_URL=tgram://bottoken/chatid, whatsapp://token@from_phone_id/to_phone_no
+```
+
+---
+
+### 2. Service Configurations
+
+#### ✈️ Telegram Configuration
+To send notifications to a Telegram chat, use the following URL format:
+```text
+tgram://{bot_token}/{chat_id}
+```
+- **`{bot_token}`**: The token you get from Telegram's BotFather when creating your bot (e.g., `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ`).
+- **`{chat_id}`**: The numeric chat ID of the user, group, or channel where the bot should send notifications (e.g., `987654321`).
+
+**Steps to set up Telegram:**
+1. Chat with `@BotFather` on Telegram and create a new bot using `/newbot` to receive your `{bot_token}`.
+2. Start a chat with your newly created bot, or add it to a group.
+3. Obtain your `{chat_id}` by sending a message to the bot and checking `https://api.telegram.org/bot{bot_token}/getUpdates` or by using a bot like `@userinfobot`.
+
+---
+
+#### 💬 WhatsApp Configuration
+Apprise supports WhatsApp notifications via two main channels:
+
+##### Option A: Meta WhatsApp Business Cloud API (Official)
+Use this option if you have a developer/business account set up directly with Meta.
+```text
+whatsapp://{token}@{from_phone_id}/{to_phone_no}
+```
+- **`{token}`**: Your Meta WhatsApp Business API access token.
+- **`{from_phone_id}`**: The Phone Number ID provided in your Meta Developer App dashboard.
+- **`{to_phone_no}`**: The destination phone number (including country code, e.g., `15551234567`).
+
+##### Option B: Twilio Gateway for WhatsApp
+Use this option if you want to route messages through your Twilio account.
+```text
+twilio://{AccountSID}:{AuthToken}@{FromPhoneNo}/w:{ToPhoneNo}
+```
+- **`AccountSID`**: Your Twilio Account SID.
+- **`AuthToken`**: Your Twilio Auth Token.
+- **`FromPhoneNo`**: The Twilio phone number configured for WhatsApp.
+- **`w:{ToPhoneNo}`**: The destination phone number prefixed with `w:` to specify WhatsApp delivery (e.g., `w:15551234567`).
+
+---
+
 ## 🧪 Unit Testing
 You can run the integration and unit tests using Vitest either via Docker or locally:
 
