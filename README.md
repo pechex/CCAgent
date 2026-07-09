@@ -23,17 +23,18 @@ If you clone this repository, the [docker-compose.yml](file:///c:/Users/Andres/R
 #### Option B: Using the Published Image (Without cloning the repository)
 If you want to spin it up on a remote server or NAS in 10 seconds without downloading the code, you only need to create a `docker-compose.yml` file with this content and run the same commands:
 ```yaml
-version: '3.8'
 services:
   cc-checkin:
     image: pechex/cc-checkin:latest
     container_name: cc-checkin
     ports:
       - "8080:8080"
+    shm_size: "2gb"
     environment:
       - HEADLESS=true
       - STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
       - STEALTH_SEED=42
+      - MOZ_DISABLE_CONTENT_SANDBOX=1
     volumes:
       - ./user_session:/app/user_session
     stdin_open: true
@@ -69,6 +70,14 @@ You can automate the check-in on your server or host system by adding a cron job
 # Example: Run every day at 8:00 AM
 0 8 * * * cd /path/to/CCAgent && /usr/bin/docker compose run --rm cc-checkin >> checkin.log 2>&1
 ```
+
+#### 4. Running inside Proxmox LXC Containers
+If you run this container inside a Proxmox LXC container (e.g. Docker inside LXC), you might encounter browser crashes or protocol errors such as:
+`can't access property "loadURI", browsingContext is undefined`
+
+To resolve this:
+1. **Enable Nesting on LXC:** In the Proxmox VE web interface, select your LXC container -> **Options** -> **Features**, check **Nesting**, and reboot the container. This allows the inner Docker daemon and browsers to run with nested virtualization features.
+2. **Sandbox Bypass:** The application configures `MOZ_DISABLE_CONTENT_SANDBOX=1` and `shm_size: "2gb"` in the `docker-compose.yml` to prevent browser crashes inside containerized environments with kernel namespace restrictions and small default `/dev/shm` directories.
 
 ---
 

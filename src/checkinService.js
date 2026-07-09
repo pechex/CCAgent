@@ -47,7 +47,8 @@ export async function launchBrowser(headless = true) {
     env: {
       ...process.env,
       STEALTHFOX_SEED: process.env.STEALTH_SEED || '42',
-      STEALTHFOX_TIMEZONE: process.env.STEALTH_TIMEZONE || 'America/New_York'
+      STEALTHFOX_TIMEZONE: process.env.STEALTH_TIMEZONE || 'America/New_York',
+      MOZ_DISABLE_CONTENT_SANDBOX: '1'
     }
   });
 
