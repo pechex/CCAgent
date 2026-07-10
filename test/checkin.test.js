@@ -54,6 +54,7 @@ describe('checkinService tests', () => {
 
   it('should detect logged out state if Log In button is visible', async () => {
     const mockPage = {
+      waitForTimeout: vi.fn(),
       locator: vi.fn(() => ({
         first: () => ({
           isVisible: vi.fn().mockResolvedValue(true)
@@ -67,11 +68,21 @@ describe('checkinService tests', () => {
 
   it('should detect logged in state if Log In button is not visible', async () => {
     const mockPage = {
-      locator: vi.fn(() => ({
-        first: () => ({
-          isVisible: vi.fn().mockRejectedValue(new Error('Timeout'))
-        })
-      }))
+      waitForTimeout: vi.fn(),
+      locator: vi.fn((selector) => {
+        if (selector.includes('span:has-text("Log In")')) {
+          return {
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(false)
+            })
+          };
+        }
+        return {
+          first: () => ({
+            isVisible: vi.fn().mockResolvedValue(true) // logged in avatar indicator visible
+          })
+        };
+      })
     };
 
     const loggedIn = await isLoggedIn(mockPage);
@@ -81,6 +92,7 @@ describe('checkinService tests', () => {
   it('should fail check-in if user is not logged in', async () => {
     const mockPage = {
       goto: vi.fn(),
+      waitForTimeout: vi.fn(),
       locator: vi.fn((selector) => {
         if (selector.includes('span:has-text("Log In")')) {
           return {
@@ -89,7 +101,12 @@ describe('checkinService tests', () => {
             })
           };
         }
-        return { count: vi.fn().mockResolvedValue(0) };
+        return {
+          first: () => ({
+            isVisible: vi.fn().mockResolvedValue(false)
+          }),
+          count: vi.fn().mockResolvedValue(0)
+        };
       })
     };
 
@@ -103,11 +120,20 @@ describe('checkinService tests', () => {
       goto: vi.fn(),
       waitForTimeout: vi.fn(),
       screenshot: vi.fn(),
+      url: vi.fn().mockReturnValue('https://www.crealitycloud.com/check-in'),
+      title: vi.fn().mockResolvedValue('Daily Check-in'),
       locator: vi.fn((selector) => {
         if (selector.includes('span:has-text("Log In")')) {
           return {
             first: () => ({
               isVisible: vi.fn().mockResolvedValue(false) // logged in
+            })
+          };
+        }
+        if (selector.includes('img[src*="avatar"]')) {
+          return {
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(true) // logged in avatar indicator visible
             })
           };
         }
@@ -117,6 +143,9 @@ describe('checkinService tests', () => {
           };
         }
         return {
+          first: () => ({
+            isVisible: vi.fn().mockResolvedValue(false)
+          }),
           count: vi.fn().mockResolvedValue(0)
         };
       }),
@@ -150,11 +179,20 @@ describe('checkinService tests', () => {
       goto: vi.fn(),
       waitForTimeout: vi.fn(),
       screenshot: vi.fn(),
+      url: vi.fn().mockReturnValue('https://www.crealitycloud.com/check-in'),
+      title: vi.fn().mockResolvedValue('Daily Check-in'),
       locator: vi.fn((selector) => {
         if (selector.includes('span:has-text("Log In")')) {
           return {
             first: () => ({
               isVisible: vi.fn().mockResolvedValue(false) // logged in
+            })
+          };
+        }
+        if (selector.includes('img[src*="avatar"]')) {
+          return {
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(true) // logged in avatar indicator visible
             })
           };
         }
@@ -164,6 +202,9 @@ describe('checkinService tests', () => {
           };
         }
         return {
+          first: () => ({
+            isVisible: vi.fn().mockResolvedValue(false)
+          }),
           count: vi.fn().mockResolvedValue(0)
         };
       }),

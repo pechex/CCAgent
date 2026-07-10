@@ -27,6 +27,14 @@ export function sendNotification(title, body) {
 
     console.log(`\n[Notification] Sending notification via Apprise to ${urls.length} target(s)...`);
 
+    let hasResolved = false;
+    const safeResolve = (value) => {
+      if (!hasResolved) {
+        hasResolved = true;
+        resolve(value);
+      }
+    };
+
     const args = ['-t', title, '-b', body, ...urls];
     const child = spawn('apprise', args);
 
@@ -41,15 +49,20 @@ export function sendNotification(title, body) {
       stderr += data.toString();
     });
 
+    child.on('error', (err) => {
+      console.error('[Notification] Failed to spawn Apprise process:', err.message || err);
+      safeResolve(false);
+    });
+
     child.on('close', (code) => {
       if (code === 0) {
         console.log('[Notification] Sent successfully.');
-        resolve(true);
+        safeResolve(true);
       } else {
         console.error(`[Notification] Failed with exit code ${code}.`);
         if (stdout) console.log(`[Notification] stdout: ${stdout.trim()}`);
         if (stderr) console.error(`[Notification] stderr: ${stderr.trim()}`);
-        resolve(false);
+        safeResolve(false);
       }
     });
   });

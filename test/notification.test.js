@@ -78,4 +78,24 @@ describe('notificationService tests', () => {
       'whatsapp://token@id/to'
     ]);
   });
+
+  it('should resolve to false and not crash if child process emits error', async () => {
+    process.env.APPRISE_URL = 'tgram://123/456';
+    
+    const spawnMock = vi.mocked(spawn);
+    spawnMock.mockImplementationOnce(() => {
+      return {
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        on: vi.fn((event, callback) => {
+          if (event === 'error') {
+            setTimeout(() => callback(new Error('Spawn failed')), 10);
+          }
+        })
+      };
+    });
+    
+    const result = await sendNotification('My Title', 'My Body');
+    expect(result).toBe(false);
+  });
 });

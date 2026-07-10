@@ -13,6 +13,7 @@ async function main() {
   
   let notificationTitle = 'Creality Cloud Check-in Status: ❌ FAILED';
   let notificationBody = '';
+  let exitCode = 0;
   
   let browserInfo;
   try {
@@ -34,12 +35,14 @@ async function main() {
           console.log('Prizes won:');
           raffleResult.prizes.forEach((prize, idx) => console.log(`  - Draw #${idx + 1}: ${prize}`));
         }
+        notificationTitle = 'Creality Cloud Check-in Status: ✅ SUCCESS';
       } else {
         console.log(`❌ FAILED: ${raffleResult.message}`);
+        exitCode = 1;
+        notificationTitle = 'Creality Cloud Check-in Status: ⚠️ WARNING (Raffle Failed)';
       }
 
-      // Format success notification
-      notificationTitle = 'Creality Cloud Check-in Status: ✅ SUCCESS';
+      // Format notification
       notificationBody = `Check-in: ${checkinResult.message}\n`;
       notificationBody += `\nRaffle: ${raffleResult.message}`;
       if (raffleResult.prizes.length > 0) {
@@ -47,11 +50,14 @@ async function main() {
       }
     } else {
       console.log(`❌ FAILED: ${checkinResult.message}`);
+      exitCode = 1;
+      notificationTitle = 'Creality Cloud Check-in Status: ❌ FAILED';
       notificationBody = `Check-in Failed: ${checkinResult.message}`;
     }
 
   } catch (error) {
     console.error('\n💥 Unexpected error during check-in script execution:', error);
+    exitCode = 1;
     notificationTitle = 'Creality Cloud Check-in Status: 💥 ERROR';
     notificationBody = `An unexpected error occurred during execution:\n${error.message || error}`;
   } finally {
@@ -69,7 +75,7 @@ async function main() {
       }
     }
 
-    process.exit(0);
+    process.exit(exitCode);
   }
 }
 
