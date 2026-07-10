@@ -12,6 +12,7 @@ services:
       - HEADLESS=false
       - STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
       - STEALTH_SEED=42
+      - TZ=America/Argentina/Buenos_Aires
       - MOZ_DISABLE_CONTENT_SANDBOX=1
     volumes:
       # Persist user login session across container runs

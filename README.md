@@ -34,6 +34,7 @@ services:
       - HEADLESS=true
       - STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
       - STEALTH_SEED=42
+      - TZ=America/Argentina/Buenos_Aires
       - MOZ_DISABLE_CONTENT_SANDBOX=1
     volumes:
       - ./user_session:/app/user_session
