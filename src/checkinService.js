@@ -64,17 +64,53 @@ export async function launchBrowser(headless = true) {
  * @returns {Promise<boolean>}
  */
 export async function isLoggedIn(page) {
+  // Wait for the page to be somewhat loaded/settled
+  await page.waitForTimeout(3000);
+
+  const url = typeof page.url === 'function' ? page.url() : '';
+  const title = typeof page.title === 'function' ? await page.title().catch(() => '') : '';
+  
+  if (url || title) {
+    console.log(`[Diagnostic] Current URL: ${url}`);
+    console.log(`[Diagnostic] Current Title: "${title}"`);
+  }
+
+  // Detect Cloudflare / Bot detection pages
+  if (title.includes('Cloudflare') || title.includes('Just a moment') || url.includes('cloudflare') || url.includes('datadome')) {
+    console.log('⚠️ [Diagnostic] Bot detection page detected (Cloudflare/DataDome)! The browser is being blocked.');
+  }
+
   // Check if a login indicator or button is visible
   const loginButton = page.locator('span:has-text("Log In"), button:has-text("Log In"), a:has-text("Log In")');
   
   try {
-    // Wait briefly to see if login button is visible
-    const visible = await loginButton.first().isVisible({ timeout: 5000 });
-    return !visible;
+    const visible = await loginButton.first().isVisible();
+    if (visible) {
+      return false;
+    }
   } catch (error) {
-    // If we timeout or fail to find it, assume we might be logged in
+    console.log('[Diagnostic] Error checking login button:', error.message);
+  }
+
+  // Double check: if we are logged in, we should see some user element,
+  // or at least not be on an empty/error page.
+  let loggedInVisible = false;
+  try {
+    const loggedInIndicator = page.locator('img[src*="avatar"], .avatar, .user-avatar, .user-info, text=Workbench, text=Daily Check-in').first();
+    loggedInVisible = await loggedInIndicator.isVisible();
+  } catch (err) {}
+
+  if (loggedInVisible) {
     return true;
   }
+
+  // Fallback: If we are on the check-in page and neither is explicitly visible,
+  // let's assume logged in so we can try to look for the check-in button.
+  if (title.includes('Check-in') || title.includes('Daily') || url.includes('check-in')) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -124,7 +160,7 @@ export async function executeCheckin(page) {
       // If we are already checked in
       if (/Checked/i.test(text)) {
         // Take a screenshot of the checked-in state for confirmation
-        const screenshotPath = path.join(PROJECT_ROOT, 'checkin-success.png');
+        const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
         await page.screenshot({ path: screenshotPath, fullPage: true });
         console.log(`Screenshot saved to ${screenshotPath}`);
 
@@ -192,7 +228,7 @@ export async function executeCheckin(page) {
         }
         
         // Take a screenshot after clicking
-        const screenshotPath = path.join(PROJECT_ROOT, 'checkin-success.png');
+        const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
         await page.screenshot({ path: screenshotPath, fullPage: true });
         console.log(`Screenshot saved to ${screenshotPath}`);
 
@@ -212,7 +248,7 @@ export async function executeCheckin(page) {
   } catch (err) {}
 
   if (/Checked/i.test(containerText)) {
-    const screenshotPath = path.join(PROJECT_ROOT, 'checkin-success.png');
+    const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
     await page.screenshot({ path: screenshotPath, fullPage: true });
     console.log(`Screenshot saved to ${screenshotPath}`);
 
@@ -223,7 +259,7 @@ export async function executeCheckin(page) {
   }
 
   // Save screenshot of current state for troubleshooting
-  const screenshotPath = path.join(PROJECT_ROOT, 'checkin-failed.png');
+  const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-failed.png');
   await page.screenshot({ path: screenshotPath, fullPage: true });
   console.log(`Troubleshooting screenshot saved to ${screenshotPath}`);
 
