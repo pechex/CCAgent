@@ -67,12 +67,19 @@ docker compose run --rm cc-checkin
 ```
 *(Optional: For optimal resource usage, make sure `HEADLESS=true` is set in your [docker-compose.yml](file:///c:/Users/Andres/Repo/CCAgent/docker-compose.yml) so the browser runs completely hidden and fast).*
 
-#### 3. Automation with Cron
-You can automate the check-in on your server or host system by adding a cron job (`crontab -e`):
-```bash
-# Example: Run every day at 8:00 AM
-0 8 * * * cd /path/to/CCAgent && /usr/bin/docker compose run --rm cc-checkin >> checkin.log 2>&1
-```
+#### 3. Automation (Cron / Systemd)
+
+You can automate the daily check-in on your server or host system in two ways:
+
+- **Option A: Cron Job (Fixed Schedule)**
+  Add a cron job (`crontab -e`) to run at a specific time:
+  ```bash
+  # Example: Run every day at 8:00 AM
+  0 8 * * * cd /path/to/CCAgent && /usr/bin/docker compose run --rm cc-checkin >> checkin.log 2>&1
+  ```
+
+- **Option B: Systemd Service & Timer (Recommended for randomized schedule)**
+  If you want to run the check-in daily at a random time within a specific time window, you can configure systemd. See the [Systemd Setup Guide](file:///c:/Users/Andres/Repo/CCAgent/SYSTEMD.md) for full instructions.
 
 #### 4. Running inside Proxmox LXC Containers
 If you run this container inside a Proxmox LXC container (e.g. Docker inside LXC), you might encounter browser crashes or protocol errors such as:
