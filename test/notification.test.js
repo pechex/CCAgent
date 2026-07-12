@@ -79,6 +79,18 @@ describe('notificationService tests', () => {
     ]);
   });
 
+  it('should support attachments if provided', async () => {
+    process.env.APPRISE_URL = 'tgram://123/456';
+    const result = await sendNotification('My Title', 'My Body', '/path/to/screenshot.png');
+    expect(result).toBe(true);
+    expect(spawn).toHaveBeenCalledWith('apprise', [
+      '-t', 'My Title',
+      '-b', 'My Body',
+      '-a', '/path/to/screenshot.png',
+      'tgram://123/456'
+    ]);
+  });
+
   it('should resolve to false and not crash if child process emits error', async () => {
     process.env.APPRISE_URL = 'tgram://123/456';
     

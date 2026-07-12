@@ -4,9 +4,10 @@ import { spawn } from 'child_process';
  * Send a notification using the Apprise CLI
  * @param {string} title The title of the notification
  * @param {string} body The body content of the notification
+ * @param {string|string[]} [attachments] Optional path(s) to files to attach
  * @returns {Promise<boolean>} Resolves to true if successful, false otherwise
  */
-export function sendNotification(title, body) {
+export function sendNotification(title, body, attachments = []) {
   return new Promise((resolve) => {
     const appriseUrl = process.env.APPRISE_URL;
     if (!appriseUrl) {
@@ -35,7 +36,17 @@ export function sendNotification(title, body) {
       }
     };
 
-    const args = ['-t', title, '-b', body, ...urls];
+    const args = ['-t', title, '-b', body];
+
+    // Support single attachment string or array of attachment strings
+    const attachmentList = Array.isArray(attachments) ? attachments : [attachments];
+    for (const attachment of attachmentList) {
+      if (attachment) {
+        args.push('-a', attachment);
+      }
+    }
+
+    args.push(...urls);
     const child = spawn('apprise', args);
 
     let stdout = '';

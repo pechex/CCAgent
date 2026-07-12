@@ -9,10 +9,17 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Fetch all history for all branches and tags (required by semantic-release)
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -26,6 +33,29 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Semantic Release
+        id: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      - name: Extract version from package.json
+        id: package-version
+        run: |
+          VERSION=$(jq -r .version package.json)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+          echo "major_minor=${MAJOR_MINOR}" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -34,5 +64,7 @@ jobs:
           push: true
           tags: |
             pechex/cc-checkin:latest
+            pechex/cc-checkin:${{ steps.package-version.outputs.version }}
+            pechex/cc-checkin:${{ steps.package-version.outputs.major_minor }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

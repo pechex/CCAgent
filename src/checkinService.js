@@ -265,7 +265,8 @@ export async function executeCheckin(page) {
 
   return {
     success: false,
-    message: 'Could not find any visible check-in button or "Checked" status on the page. Screenshot saved for review.'
+    message: 'Could not find any visible check-in button or "Checked" status on the page. Screenshot saved for review.',
+    screenshotPath: screenshotPath
   };
 }
 
@@ -278,6 +279,8 @@ export async function executeRaffle(page) {
   const url = 'https://share.crealitycloud.com/boost-sign-in?activeChannel=6';
   console.log(`\nNavigating to raffle page: ${url}...`);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+  const errorScreenshots = [];
 
   // 1. Wait a moment for page load
   await page.waitForTimeout(5000);
@@ -299,17 +302,24 @@ export async function executeRaffle(page) {
   if (await numLocator.count() === 0) {
     // If we can't find the lucky draw indicator, maybe we didn't redirect successfully
     const bodyText = await page.innerText('body').catch(() => '');
+    const screenshotPath = path.join(USER_SESSION_DIR, 'raffle-load-failed.png');
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`Saved screenshot to ${screenshotPath}`);
+    errorScreenshots.push(screenshotPath);
+
     if (bodyText.includes('Select Account') || bodyText.includes('Continue share.crealitycloud.com')) {
       return {
         success: false,
         message: 'Could not bypass the authorization screen.',
-        prizes: []
+        prizes: [],
+        errorScreenshots
       };
     }
     return {
       success: false,
       message: 'Could not load the raffle page grid (draw counter not found).',
-      prizes: []
+      prizes: [],
+      errorScreenshots
     };
   }
 
@@ -321,7 +331,8 @@ export async function executeRaffle(page) {
     return {
       success: true,
       message: 'No raffle tickets available to draw today.',
-      prizes: []
+      prizes: [],
+      errorScreenshots
     };
   }
 
@@ -344,16 +355,20 @@ export async function executeRaffle(page) {
 
     // Wait for the confirmation "Got it" button or modal to become visible
     console.log('Waiting for the prize modal to appear...');
-    const gotItBtn = page.locator('button, div, span').filter({ hasText: /^Got it$/i }).first();
+    
+    // Locate the active visible dialog, then search for the Got it button/element inside it
+    const activeDialog = page.locator('.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container').filter({ visible: true }).first();
+    const gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div').filter({ hasText: /Got\s*it/i }).first();
     
     try {
       // Give it up to 10 seconds for animation + network request + modal popup
       await gotItBtn.waitFor({ state: 'visible', timeout: 10000 });
     } catch (err) {
       console.log('Timeout waiting for the prize modal to appear.');
-      const errScreenshotPath = path.join(PROJECT_ROOT, `raffle-draw-error-${attempts}.png`);
+      const errScreenshotPath = path.join(USER_SESSION_DIR, `raffle-draw-error-${attempts}.png`);
       await page.screenshot({ path: errScreenshotPath, fullPage: true });
       console.log(`Saved screenshot to ${errScreenshotPath}`);
+      errorScreenshots.push(errScreenshotPath);
       break;
     }
 
@@ -374,7 +389,7 @@ export async function executeRaffle(page) {
     prizes.push(prizeWon);
 
     // Save screenshot of the win
-    const winScreenshotPath = path.join(PROJECT_ROOT, `raffle-win-${attempts}.png`);
+    const winScreenshotPath = path.join(USER_SESSION_DIR, `raffle-win-${attempts}.png`);
     await page.screenshot({ path: winScreenshotPath });
     console.log(`Win screenshot saved to ${winScreenshotPath}`);
 
@@ -393,7 +408,8 @@ export async function executeRaffle(page) {
   return {
     success: true,
     message: `Completed ${prizes.length} draw(s) successfully.`,
-    prizes
+    prizes,
+    errorScreenshots
   };
 }
 

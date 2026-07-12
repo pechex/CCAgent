@@ -297,16 +297,18 @@ describe('checkinService tests', () => {
               click: clickStartMock
             };
           }
-          if (selector === 'button, div, span') {
+          if (selector === '.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container') {
             return {
-              filter: (opts) => {
-                return {
-                  first: () => ({
+              filter: vi.fn().mockReturnThis(),
+              first: vi.fn().mockImplementation(() => ({
+                locator: vi.fn(() => ({
+                  filter: vi.fn().mockReturnThis(),
+                  first: vi.fn().mockReturnValue({
                     waitFor: vi.fn().mockResolvedValue(undefined),
                     click: clickGotItMock
                   })
-                };
-              }
+                }))
+              }))
             };
           }
           if (selector === '.dtc-lottery_container') {
@@ -325,6 +327,53 @@ describe('checkinService tests', () => {
       expect(clickStartMock).toHaveBeenCalled();
       expect(clickGotItMock).toHaveBeenCalled();
       expect(result.prizes).toEqual(['200 Points']);
+    });
+
+    it('should return errorScreenshots on timeout waiting for prize modal', async () => {
+      const clickStartMock = vi.fn();
+      const mockPage = {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        screenshot: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector === 'text=Select Account') {
+            return { count: vi.fn().mockResolvedValue(0) };
+          }
+          if (selector === '.lucky-draw-left .num') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              innerText: vi.fn().mockResolvedValue('1')
+            };
+          }
+          if (selector === '.start-btn') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              click: clickStartMock
+            };
+          }
+          if (selector === '.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container') {
+            return {
+              filter: vi.fn().mockReturnThis(),
+              first: vi.fn().mockImplementation(() => ({
+                locator: vi.fn(() => ({
+                  filter: vi.fn().mockReturnThis(),
+                  first: vi.fn().mockReturnValue({
+                    waitFor: vi.fn().mockRejectedValue(new Error('timeout')),
+                    click: vi.fn()
+                  })
+                }))
+              }))
+            };
+          }
+          return { count: vi.fn().mockResolvedValue(0) };
+        })
+      };
+
+      const result = await executeRaffle(mockPage);
+      expect(result.success).toBe(true);
+      expect(clickStartMock).toHaveBeenCalled();
+      expect(result.errorScreenshots.length).toBe(1);
+      expect(result.errorScreenshots[0]).toContain('raffle-draw-error-1.png');
     });
   });
 });

@@ -1,6 +1,7 @@
 import { launchBrowser, executeCheckin, executeRaffle } from './src/checkinService.js';
 import { sendNotification } from './src/notificationService.js';
 import dotenv from 'dotenv';
+import path from 'path';
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ async function main() {
   let notificationTitle = 'Creality Cloud Check-in Status: ❌ FAILED';
   let notificationBody = '';
   let exitCode = 0;
+  const attachments = [];
   
   let browserInfo;
   try {
@@ -42,6 +44,11 @@ async function main() {
         notificationTitle = 'Creality Cloud Check-in Status: ⚠️ WARNING (Raffle Failed)';
       }
 
+      // Collect error screenshots from raffle if any
+      if (raffleResult.errorScreenshots && raffleResult.errorScreenshots.length > 0) {
+        attachments.push(...raffleResult.errorScreenshots);
+      }
+
       // Format notification
       notificationBody = `Check-in: ${checkinResult.message}\n`;
       notificationBody += `\nRaffle: ${raffleResult.message}`;
@@ -53,6 +60,10 @@ async function main() {
       exitCode = 1;
       notificationTitle = 'Creality Cloud Check-in Status: ❌ FAILED';
       notificationBody = `Check-in Failed: ${checkinResult.message}`;
+      
+      if (checkinResult.screenshotPath) {
+        attachments.push(checkinResult.screenshotPath);
+      }
     }
 
   } catch (error) {
@@ -60,6 +71,18 @@ async function main() {
     exitCode = 1;
     notificationTitle = 'Creality Cloud Check-in Status: 💥 ERROR';
     notificationBody = `An unexpected error occurred during execution:\n${error.message || error}`;
+
+    // Try to capture screen on unexpected crash
+    if (browserInfo && browserInfo.page) {
+      try {
+        const unexpectedErrorPath = path.resolve('user_session', 'unexpected-error.png');
+        await browserInfo.page.screenshot({ path: unexpectedErrorPath, fullPage: true });
+        console.log(`Unexpected error screenshot saved to ${unexpectedErrorPath}`);
+        attachments.push(unexpectedErrorPath);
+      } catch (screenshotErr) {
+        console.error('Failed to take screenshot on unexpected error:', screenshotErr.message);
+      }
+    }
   } finally {
     if (browserInfo && browserInfo.context) {
       console.log('\nClosing browser...');
@@ -69,7 +92,7 @@ async function main() {
     // Send notification before exiting
     if (notificationBody) {
       try {
-        await sendNotification(notificationTitle, notificationBody);
+        await sendNotification(notificationTitle, notificationBody, attachments);
       } catch (notifyErr) {
         console.error('Error sending Apprise notification:', notifyErr);
       }
