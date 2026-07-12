@@ -1,6 +1,6 @@
 {
   "name": "cc-checkin",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Creality Cloud daily check-in automation using invisible_playwright Firefox in WSL",
   "main": "checkin.js",
@@ -20,7 +20,9 @@
     "@semantic-release/git": "^10.0.1"
   },
   "release": {
-    "branches": ["main"],
+    "branches": [
+      "main"
+    ],
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
@@ -39,7 +41,11 @@
       [
         "@semantic-release/git",
         {
-          "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
+          "assets": [
+            "package.json",
+            "package-lock.json",
+            "CHANGELOG.md"
+          ],
           "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
         }
       ],
