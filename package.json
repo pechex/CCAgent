@@ -1,6 +1,6 @@
 {
   "name": "cc-checkin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Creality Cloud daily check-in automation using invisible_playwright Firefox in WSL",
   "main": "checkin.js",

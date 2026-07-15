@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/pechex/CCAgent/compare/v1.0.0...v1.0.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* fix raffle draws ([8365e97](https://github.com/pechex/CCAgent/commit/8365e97697767ece282c03794d05c93317bd2b84))
+
 # 1.0.0 (2026-07-12)
 
 
