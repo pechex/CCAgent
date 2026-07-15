@@ -356,13 +356,12 @@ export async function executeRaffle(page) {
     // Wait for the confirmation "Got it" button or modal to become visible
     console.log('Waiting for the prize modal to appear...');
     
-    // Locate the active visible dialog, then search for the Got it button/element inside it
-    const activeDialog = page.locator('.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container').filter({ visible: true }).first();
-    const gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div').filter({ hasText: /Got\s*it/i }).first();
+    // Locate the active visible dialog wrapper (Element UI modal uses .el-dialog__wrapper or role="dialog")
+    const activeDialog = page.locator('.el-dialog__wrapper, [role="dialog"]').filter({ visible: true }).first();
     
     try {
-      // Give it up to 10 seconds for animation + network request + modal popup
-      await gotItBtn.waitFor({ state: 'visible', timeout: 10000 });
+      // Wait for the dialog itself to become visible
+      await activeDialog.waitFor({ state: 'visible', timeout: 10000 });
     } catch (err) {
       console.log('Timeout waiting for the prize modal to appear.');
       const errScreenshotPath = path.join(USER_SESSION_DIR, `raffle-draw-error-${attempts}.png`);
@@ -373,16 +372,33 @@ export async function executeRaffle(page) {
     }
 
     // Extract the dialog text to find out what prize we won
-    const dialogLocator = page.locator('.dtc-lottery_container');
     let prizeWon = 'Unknown Prize';
-    if (await dialogLocator.count() > 0) {
-      const rawText = await dialogLocator.innerText();
-      const cleanText = rawText.replace(/\s+/g, ' ').trim();
-      const match = cleanText.match(/Congratulations!\s*(.*?)\s*(?:has|have|is|are|been|added)/i);
-      if (match && match[1]) {
-        prizeWon = match[1].trim();
-      } else {
-        prizeWon = cleanText;
+    if (await activeDialog.count() > 0) {
+      // 1. Try to find specific prize selectors within the active dialog
+      const prizeNameSelectors = ['.win-content', '.win-prize-name', '.prize-name', '.prize-title'];
+      let prizeText = '';
+      for (const selector of prizeNameSelectors) {
+        const el = activeDialog.locator(selector);
+        if (await el.count() > 0 && await el.isVisible()) {
+          prizeText = (await el.innerText()).trim();
+          if (prizeText) break;
+        }
+      }
+
+      // 2. Fallback to using regex matching on the overall dialog text
+      if (!prizeText) {
+        const rawText = await activeDialog.innerText();
+        const cleanText = rawText.replace(/\s+/g, ' ').trim();
+        const match = cleanText.match(/(?:Congratulations|Felicidades)!\s*(.*?)\s*(?:has|have|is|are|been|added|se\s+ha|se\s+han)/i);
+        if (match && match[1]) {
+          prizeText = match[1].trim();
+        } else {
+          prizeText = cleanText;
+        }
+      }
+
+      if (prizeText) {
+        prizeWon = prizeText;
       }
     }
     console.log(`🎉 Draw #${attempts} Result: Won "${prizeWon}"`);
@@ -393,11 +409,59 @@ export async function executeRaffle(page) {
     await page.screenshot({ path: winScreenshotPath });
     console.log(`Win screenshot saved to ${winScreenshotPath}`);
 
-    // Click the "Got it" button to close the dialog
+    // Dismiss the prize dialog
     console.log('Dismissing the prize dialog...');
-    await gotItBtn.click();
+    let clickedClose = false;
 
-    // Wait 2 seconds for modal to fade/close and tickets count to update
+    // Try finding the button with Got it / Entendido / Close text first
+    const gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div')
+      .filter({ hasText: /Got\s*it|Entendido|Aceptar|Close|Confirm/i })
+      .first();
+
+    if (await gotItBtn.count() > 0 && await gotItBtn.isVisible()) {
+      await gotItBtn.click();
+      clickedClose = true;
+    } else {
+      // Try alternative selectors inside the dialog (close buttons/icons)
+      const alternativeCloseSelectors = [
+        '.el-dialog__headerbtn',
+        '.el-dialog__close',
+        '.close-btn',
+        '.close-icon',
+        '[aria-label="Close"]',
+        'button, [role="button"]'
+      ];
+      for (const sel of alternativeCloseSelectors) {
+        const closeEl = activeDialog.locator(sel).first();
+        if (await closeEl.count() > 0 && await closeEl.isVisible()) {
+          await closeEl.click();
+          clickedClose = true;
+          break;
+        }
+      }
+    }
+
+    if (!clickedClose) {
+      console.log('Could not find standard close button inside dialog, pressing Escape...');
+      await page.keyboard.press('Escape');
+    }
+
+    // Wait for the dialog to be hidden/closed fully
+    try {
+      await activeDialog.waitFor({ state: 'hidden', timeout: 5000 });
+      console.log('Prize dialog dismissed successfully.');
+    } catch (err) {
+      console.log('Warning: Dialog did not hide after click. Trying escape key as backup...');
+      await page.keyboard.press('Escape');
+      try {
+        await activeDialog.waitFor({ state: 'hidden', timeout: 3000 });
+        console.log('Prize dialog dismissed after backup escape key.');
+      } catch (escapeErr) {
+        console.log('Warning: Dialog is still visible. Proceeding anyway...');
+      }
+    }
+
+    // Wait an additional 2 seconds for ticket count update
     await page.waitForTimeout(2000);
 
     // Refresh tickets count

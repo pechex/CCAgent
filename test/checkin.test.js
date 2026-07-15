@@ -297,17 +297,29 @@ describe('checkinService tests', () => {
               click: clickStartMock
             };
           }
-          if (selector === '.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container') {
+          if (selector === '.el-dialog__wrapper, [role="dialog"]') {
             return {
               filter: vi.fn().mockReturnThis(),
               first: vi.fn().mockImplementation(() => ({
-                locator: vi.fn(() => ({
-                  filter: vi.fn().mockReturnThis(),
-                  first: vi.fn().mockReturnValue({
+                waitFor: vi.fn().mockResolvedValue(undefined),
+                count: vi.fn().mockResolvedValue(1),
+                innerText: vi.fn().mockResolvedValue('Congratulations! 200 Points have been added to your account.'),
+                locator: vi.fn(() => {
+                  const buttonMock = {
+                    click: clickGotItMock,
                     waitFor: vi.fn().mockResolvedValue(undefined),
-                    click: clickGotItMock
-                  })
-                }))
+                    count: vi.fn().mockResolvedValue(1),
+                    isVisible: vi.fn().mockResolvedValue(true),
+                    innerText: vi.fn().mockResolvedValue('200 Points')
+                  };
+                  return {
+                    count: vi.fn().mockResolvedValue(1),
+                    isVisible: vi.fn().mockResolvedValue(true),
+                    innerText: vi.fn().mockResolvedValue('200 Points'),
+                    filter: vi.fn().mockReturnThis(),
+                    first: vi.fn().mockReturnValue(buttonMock)
+                  };
+                })
               }))
             };
           }
@@ -351,17 +363,27 @@ describe('checkinService tests', () => {
               click: clickStartMock
             };
           }
-          if (selector === '.el-dialog__wrapper, [role="dialog"], .dtc-lottery_container') {
+          if (selector === '.el-dialog__wrapper, [role="dialog"]') {
             return {
               filter: vi.fn().mockReturnThis(),
               first: vi.fn().mockImplementation(() => ({
-                locator: vi.fn(() => ({
-                  filter: vi.fn().mockReturnThis(),
-                  first: vi.fn().mockReturnValue({
-                    waitFor: vi.fn().mockRejectedValue(new Error('timeout')),
-                    click: vi.fn()
-                  })
-                }))
+                waitFor: vi.fn().mockRejectedValue(new Error('timeout')),
+                count: vi.fn().mockResolvedValue(1),
+                innerText: vi.fn().mockResolvedValue('Congratulations! 200 Points have been added to your account.'),
+                locator: vi.fn(() => {
+                  const buttonMock = {
+                    click: vi.fn(),
+                    waitFor: vi.fn().mockResolvedValue(undefined),
+                    count: vi.fn().mockResolvedValue(1),
+                    isVisible: vi.fn().mockResolvedValue(true)
+                  };
+                  return {
+                    count: vi.fn().mockResolvedValue(1),
+                    isVisible: vi.fn().mockResolvedValue(true),
+                    filter: vi.fn().mockReturnThis(),
+                    first: vi.fn().mockReturnValue(buttonMock)
+                  };
+                })
               }))
             };
           }
