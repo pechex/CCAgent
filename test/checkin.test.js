@@ -297,7 +297,7 @@ describe('checkinService tests', () => {
               click: clickStartMock
             };
           }
-          if (selector === '.el-dialog__wrapper, [role="dialog"]') {
+          if (selector.includes('.el-dialog__wrapper')) {
             return {
               filter: vi.fn().mockReturnThis(),
               first: vi.fn().mockImplementation(() => ({
@@ -363,7 +363,7 @@ describe('checkinService tests', () => {
               click: clickStartMock
             };
           }
-          if (selector === '.el-dialog__wrapper, [role="dialog"]') {
+          if (selector.includes('.el-dialog__wrapper')) {
             return {
               filter: vi.fn().mockReturnThis(),
               first: vi.fn().mockImplementation(() => ({
@@ -396,6 +396,57 @@ describe('checkinService tests', () => {
       expect(clickStartMock).toHaveBeenCalled();
       expect(result.errorScreenshots.length).toBe(1);
       expect(result.errorScreenshots[0]).toContain('raffle-draw-error-1.png');
+    });
+
+    it('should continue drawing if a draw results in "Thanks" (no dialog, but tickets decrease)', async () => {
+      const clickStartMock = vi.fn();
+      let numCalls = 0;
+
+      const mockPage = {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        screenshot: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector === 'text=Select Account') {
+            return { count: vi.fn().mockResolvedValue(0) };
+          }
+          if (selector.includes('.el-dialog__wrapper')) {
+            return {
+              filter: vi.fn().mockReturnThis(),
+              first: vi.fn().mockImplementation(() => ({
+                waitFor: vi.fn().mockRejectedValue(new Error('timeout')), // no dialog appears
+              }))
+            };
+          }
+          if (selector === '.lucky-draw-left .num') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              innerText: vi.fn().mockImplementation(async () => {
+                numCalls++;
+                // 1st call: ticket count is 2 (start)
+                // 2nd call: ticket count is 1 (after draw 1)
+                // 3rd call: ticket count is 0 (after draw 2)
+                if (numCalls === 1) return '2';
+                if (numCalls === 2) return '1';
+                return '0';
+              })
+            };
+          }
+          if (selector === '.start-btn') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              click: clickStartMock
+            };
+          }
+          return { count: vi.fn().mockResolvedValue(0) };
+        })
+      };
+
+      const result = await executeRaffle(mockPage);
+      expect(result.success).toBe(true);
+      expect(clickStartMock).toHaveBeenCalledTimes(2);
+      expect(result.prizes).toEqual(['Thanks / No Prize', 'Thanks / No Prize']);
+      expect(result.errorScreenshots).toEqual([]);
     });
   });
 });

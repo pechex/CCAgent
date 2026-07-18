@@ -350,6 +350,8 @@ export async function executeRaffle(page) {
       break;
     }
 
+    const prevCount = drawsLeft;
+
     // Click Start button
     await startBtn.click();
 
@@ -357,116 +359,175 @@ export async function executeRaffle(page) {
     console.log('Waiting for the prize modal to appear...');
     
     // Locate the active visible dialog wrapper (Element UI modal uses .el-dialog__wrapper or role="dialog")
-    const activeDialog = page.locator('.el-dialog__wrapper, [role="dialog"]').filter({ visible: true }).first();
+    const activeDialog = page.locator('.boost-win_dialog, .el-dialog__wrapper, [role="dialog"]').filter({ visible: true }).first();
     
+    let dialogAppeared = true;
     try {
-      // Wait for the dialog itself to become visible
-      await activeDialog.waitFor({ state: 'visible', timeout: 10000 });
+      // Wait for the dialog itself to become visible (5 seconds is plenty for the spin animation to complete)
+      await activeDialog.waitFor({ state: 'visible', timeout: 5000 });
     } catch (err) {
-      console.log('Timeout waiting for the prize modal to appear.');
-      const errScreenshotPath = path.join(USER_SESSION_DIR, `raffle-draw-error-${attempts}.png`);
-      await page.screenshot({ path: errScreenshotPath, fullPage: true });
-      console.log(`Saved screenshot to ${errScreenshotPath}`);
-      errorScreenshots.push(errScreenshotPath);
-      break;
+      dialogAppeared = false;
+      console.log('No prize modal appeared within 5 seconds.');
     }
 
-    // Extract the dialog text to find out what prize we won
-    let prizeWon = 'Unknown Prize';
-    if (await activeDialog.count() > 0) {
-      // 1. Try to find specific prize selectors within the active dialog
-      const prizeNameSelectors = ['.win-content', '.win-prize-name', '.prize-name', '.prize-title'];
-      let prizeText = '';
-      for (const selector of prizeNameSelectors) {
-        const el = activeDialog.locator(selector);
-        if (await el.count() > 0 && await el.isVisible()) {
-          prizeText = (await el.innerText()).trim();
-          if (prizeText) break;
+    if (dialogAppeared) {
+      // Extract the dialog text to find out what prize we won
+      let prizeWon = 'Unknown Prize';
+      if (await activeDialog.count() > 0) {
+        // 1. Try to find specific prize selectors within the active dialog
+        const prizeNameSelectors = ['.win-content', '.info-content', '.win-prize-name', '.prize-name', '.prize-title'];
+        let prizeText = '';
+        for (const selector of prizeNameSelectors) {
+          const el = activeDialog.locator(selector);
+          if (await el.count() > 0 && await el.isVisible()) {
+            prizeText = (await el.innerText()).trim();
+            if (prizeText) break;
+          }
+        }
+
+        // 2. Fallback to using regex matching on the overall dialog text
+        if (!prizeText) {
+          const rawText = await activeDialog.innerText();
+          const cleanText = rawText.replace(/\s+/g, ' ').trim();
+          const match = cleanText.match(/(?:Congratulations|Felicidades)!\s*(.*?)\s*(?:has|have|is|are|been|added|se\s+ha|se\s+han)/i);
+          if (match && match[1]) {
+            prizeText = match[1].trim();
+          } else {
+            prizeText = cleanText;
+          }
+        }
+
+        if (prizeText) {
+          prizeWon = prizeText;
         }
       }
+      console.log(`🎉 Draw #${attempts} Result: Won "${prizeWon}"`);
+      prizes.push(prizeWon);
 
-      // 2. Fallback to using regex matching on the overall dialog text
-      if (!prizeText) {
-        const rawText = await activeDialog.innerText();
-        const cleanText = rawText.replace(/\s+/g, ' ').trim();
-        const match = cleanText.match(/(?:Congratulations|Felicidades)!\s*(.*?)\s*(?:has|have|is|are|been|added|se\s+ha|se\s+han)/i);
-        if (match && match[1]) {
-          prizeText = match[1].trim();
-        } else {
-          prizeText = cleanText;
-        }
+      // Save screenshot of the win
+      const winScreenshotPath = path.join(USER_SESSION_DIR, `raffle-win-${attempts}.png`);
+      await page.screenshot({ path: winScreenshotPath });
+      console.log(`Win screenshot saved to ${winScreenshotPath}`);
+
+      // Dismiss the prize dialog
+      console.log('Dismissing the prize dialog...');
+      let clickedClose = false;
+
+      // Try finding the button with Got it / Entendido / Close text first
+      // Use strict/exact text boundary matches first to avoid parent element matching
+      let gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div, a')
+        .filter({ hasText: /^\s*(Got\s*it|Entendido|Aceptar|Close|Confirm|OK|Ok)\s*$/i })
+        .first();
+
+      if (await gotItBtn.count() === 0) {
+        // Fallback 1a: search for elements with partial text match, selecting the last (deepest) match
+        gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div, a')
+          .filter({ hasText: /Got\s*it|Entendido|Aceptar|Close|Confirm/i })
+          .last();
       }
 
-      if (prizeText) {
-        prizeWon = prizeText;
+      if (await gotItBtn.count() === 0) {
+        // Fallback 1b: search globally on the page for exact text
+        gotItBtn = page.locator('button, [role="button"], .cus-button, .el-button, span, div, a')
+          .filter({ hasText: /^\s*(Got\s*it|Entendido|Aceptar|Close|Confirm|OK|Ok)\s*$/i })
+          .first();
       }
-    }
-    console.log(`🎉 Draw #${attempts} Result: Won "${prizeWon}"`);
-    prizes.push(prizeWon);
 
-    // Save screenshot of the win
-    const winScreenshotPath = path.join(USER_SESSION_DIR, `raffle-win-${attempts}.png`);
-    await page.screenshot({ path: winScreenshotPath });
-    console.log(`Win screenshot saved to ${winScreenshotPath}`);
-
-    // Dismiss the prize dialog
-    console.log('Dismissing the prize dialog...');
-    let clickedClose = false;
-
-    // Try finding the button with Got it / Entendido / Close text first
-    const gotItBtn = activeDialog.locator('button, [role="button"], .cus-button, .el-button, span, div')
-      .filter({ hasText: /Got\s*it|Entendido|Aceptar|Close|Confirm/i })
-      .first();
-
-    if (await gotItBtn.count() > 0 && await gotItBtn.isVisible()) {
-      await gotItBtn.click();
-      clickedClose = true;
-    } else {
-      // Try alternative selectors inside the dialog (close buttons/icons)
-      const alternativeCloseSelectors = [
-        '.el-dialog__headerbtn',
-        '.el-dialog__close',
-        '.close-btn',
-        '.close-icon',
-        '[aria-label="Close"]',
-        'button, [role="button"]'
-      ];
-      for (const sel of alternativeCloseSelectors) {
-        const closeEl = activeDialog.locator(sel).first();
-        if (await closeEl.count() > 0 && await closeEl.isVisible()) {
-          await closeEl.click();
+      if (await gotItBtn.count() > 0) {
+        try {
+          console.log('Found dismissal button. Attempting to click...');
+          await gotItBtn.click({ timeout: 5000 });
           clickedClose = true;
-          break;
+        } catch (clickErr) {
+          console.log(`Failed to click dismissal button: ${clickErr.message}`);
         }
       }
-    }
 
-    if (!clickedClose) {
-      console.log('Could not find standard close button inside dialog, pressing Escape...');
-      await page.keyboard.press('Escape');
-    }
+      // Fallback 2: Try alternative close selectors (like cross icon/header close button)
+      if (!clickedClose) {
+        const alternativeCloseSelectors = [
+          '.el-dialog__headerbtn',
+          '.el-dialog__close',
+          '.close-btn',
+          '.close-icon',
+          '[aria-label="Close"]',
+          'button, [role="button"]'
+        ];
+        for (const sel of alternativeCloseSelectors) {
+          let closeEl = activeDialog.locator(sel).first();
+          if (await closeEl.count() === 0) {
+            closeEl = page.locator(sel).first();
+          }
+          if (await closeEl.count() > 0 && await closeEl.isVisible()) {
+            console.log(`Clicking alternative close element: ${sel}...`);
+            try {
+              await closeEl.click({ timeout: 5000 });
+              clickedClose = true;
+              break;
+            } catch (err) {
+              console.log(`Failed to click alternative close element ${sel}: ${err.message}`);
+            }
+          }
+        }
+      }
 
-    // Wait for the dialog to be hidden/closed fully
-    try {
-      await activeDialog.waitFor({ state: 'hidden', timeout: 5000 });
-      console.log('Prize dialog dismissed successfully.');
-    } catch (err) {
-      console.log('Warning: Dialog did not hide after click. Trying escape key as backup...');
-      await page.keyboard.press('Escape');
+      // Fallback 3: Try to click the backdrop of the dialog (Element UI close-on-click-modal)
+      if (!clickedClose) {
+        console.log('Trying to click active dialog backdrop...');
+        try {
+          await activeDialog.click({ position: { x: 10, y: 10 }, timeout: 3000 });
+          clickedClose = true;
+        } catch (clickErr) {
+          console.log('Failed to click dialog backdrop:', clickErr.message);
+        }
+      }
+
+      // Fallback 4: Press Escape
+      if (!clickedClose) {
+        console.log('Could not find standard close button inside dialog, pressing Escape...');
+        await page.keyboard.press('Escape');
+      }
+
+      // Wait for the dialog to be hidden/closed fully
       try {
-        await activeDialog.waitFor({ state: 'hidden', timeout: 3000 });
-        console.log('Prize dialog dismissed after backup escape key.');
-      } catch (escapeErr) {
-        console.log('Warning: Dialog is still visible. Proceeding anyway...');
+        await activeDialog.waitFor({ state: 'hidden', timeout: 5000 });
+        console.log('Prize dialog dismissed successfully.');
+      } catch (err) {
+        console.log('Warning: Dialog did not hide after click. Trying escape key as backup...');
+        await page.keyboard.press('Escape');
+        try {
+          await activeDialog.waitFor({ state: 'hidden', timeout: 3000 });
+          console.log('Prize dialog dismissed after backup escape key.');
+        } catch (escapeErr) {
+          console.log('Warning: Dialog is still visible. Proceeding anyway...');
+        }
+      }
+
+      // Wait an additional 2 seconds for ticket count update
+      await page.waitForTimeout(2000);
+
+      // Refresh tickets count
+      drawsLeftText = await numLocator.innerText();
+      drawsLeft = parseInt(drawsLeftText.trim(), 10) || 0;
+    } else {
+      // No dialog appeared. Check if ticket count decreased (e.g. "Thanks / Unfortunately, you didn't win")
+      await page.waitForTimeout(2000); // Wait for potential count update
+      drawsLeftText = await numLocator.innerText();
+      const currentDrawsLeft = parseInt(drawsLeftText.trim(), 10) || 0;
+
+      if (currentDrawsLeft < prevCount) {
+        console.log(`🎉 Draw #${attempts} Result: No prize ("Thanks" / "Unfortunately, you didn't win")`);
+        prizes.push('Thanks / No Prize');
+        drawsLeft = currentDrawsLeft;
+      } else {
+        console.log('Error: Ticket count did not decrease and no prize modal appeared.');
+        const errScreenshotPath = path.join(USER_SESSION_DIR, `raffle-draw-error-${attempts}.png`);
+        await page.screenshot({ path: errScreenshotPath, fullPage: true });
+        console.log(`Saved screenshot to ${errScreenshotPath}`);
+        errorScreenshots.push(errScreenshotPath);
+        break;
       }
     }
-
-    // Wait an additional 2 seconds for ticket count update
-    await page.waitForTimeout(2000);
-
-    // Refresh tickets count
-    drawsLeftText = await numLocator.innerText();
-    drawsLeft = parseInt(drawsLeftText.trim(), 10) || 0;
   }
 
   return {

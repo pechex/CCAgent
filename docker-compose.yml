@@ -17,5 +17,8 @@ services:
     volumes:
       # Persist user login session across container runs
       - ./user_session:/app/user_session
+      # Mount application code for instant updates without rebuilding
+      - ./src:/app/src
+      - ./checkin.js:/app/checkin.js
     stdin_open: true # Keep stdin open (equivalent to -i)
     tty: true        # Enable tty terminal (equivalent to -t)
