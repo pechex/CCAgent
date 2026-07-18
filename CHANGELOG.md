@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/pechex/CCAgent/compare/v1.0.1...v1.0.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* resolve raffle click timeout and add docker volume mount ([4e3cb6e](https://github.com/pechex/CCAgent/commit/4e3cb6e6fc5056a5b6ba8d3255ce0d7d95ff45d0))
+
 ## [1.0.1](https://github.com/pechex/CCAgent/compare/v1.0.0...v1.0.1) (2026-07-15)
 
 
