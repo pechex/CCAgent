@@ -59,6 +59,264 @@ export async function launchBrowser(headless = true) {
 }
 
 /**
+ * Check if the page is currently on the Account Selection authorization screen ("Seleccionar cuenta" / "Select Account").
+ * @param {import('playwright-core').Page | import('playwright-core').Frame} page 
+ * @returns {Promise<boolean>}
+ */
+export async function isAccountSelectionScreen(page) {
+  try {
+    const titleLocator = page.locator('text=/Seleccionar cuenta|Select Account/i');
+    if (await titleLocator.count().catch(() => 0) > 0) {
+      return true;
+    }
+    const continueDomainLocator = page.locator('text=/Continu(?:ar|e)\\s+(?:share\\.)?crealitycloud\\.com/i');
+    if (await continueDomainLocator.count().catch(() => 0) > 0) {
+      return true;
+    }
+    if (await page.locator('text=Select Account').count().catch(() => 0) > 0) {
+      return true;
+    }
+  } catch (err) {}
+  return false;
+}
+
+/**
+ * Helper to click the "Continuar" / "Continue" button on an authorization container.
+ * @param {import('playwright-core').Page | import('playwright-core').Frame} container 
+ * @returns {Promise<boolean>}
+ */
+async function clickContinueOnContainer(container) {
+  console.log('Account authorization screen detected ("Seleccionar cuenta" / "Select Account"). Clicking "Continue"...');
+
+  // If an account row is visible, ensure it is clicked/selected if needed
+  try {
+    const accountItem = container.locator('.account-item, [class*="account-item"], [class*="account-list"] > div').first();
+    if (await accountItem.count() > 0 && await accountItem.isVisible()) {
+      await accountItem.click({ timeout: 1000 }).catch(() => {});
+    }
+  } catch (e) {}
+
+  const continueSelectors = [
+    'button.cus-button.primary.success',
+    'button.cus-button',
+    'button:has-text("Continuar")',
+    'button:has-text("Continue")',
+    '[role="button"]:has-text("Continuar")',
+    '[role="button"]:has-text("Continue")',
+    '.el-button--primary:has-text("Continuar")',
+    '.el-button--primary:has-text("Continue")'
+  ];
+
+  let clicked = false;
+  for (const sel of continueSelectors) {
+    const btn = container.locator(sel);
+    const count = typeof btn.count === 'function' ? await btn.count().catch(() => 0) : 0;
+    if (count > 0) {
+      const firstBtn = typeof btn.first === 'function' ? btn.first() : btn;
+      const isVis = typeof firstBtn.isVisible === 'function' ? await firstBtn.isVisible().catch(() => true) : true;
+      if (isVis) {
+        console.log(`Clicking authorization continue button (${sel})...`);
+        try {
+          if (typeof firstBtn.click === 'function') {
+            await firstBtn.click({ timeout: 5000 });
+            clicked = true;
+            break;
+          }
+        } catch (clickErr) {
+          console.log(`Standard click failed for ${sel}: ${clickErr.message}. Trying evaluate click...`);
+          if (typeof firstBtn.evaluate === 'function') {
+            await firstBtn.evaluate(node => node.click()).catch(() => {});
+            clicked = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (!clicked) {
+    const genericBtn = container.locator('button, [role="button"], a, div').filter({
+      hasText: /^\s*(Continuar|Continue)\s*$/i
+    });
+    const gFirst = typeof genericBtn.first === 'function' ? genericBtn.first() : genericBtn;
+    const gCount = typeof genericBtn.count === 'function' ? await genericBtn.count().catch(() => 0) : 0;
+    if (gCount > 0) {
+      console.log('Clicking fallback generic continue button...');
+      try {
+        await gFirst.click({ timeout: 5000 });
+        clicked = true;
+      } catch (err) {
+        if (typeof gFirst.evaluate === 'function') {
+          await gFirst.evaluate(node => node.click()).catch(() => {});
+          clicked = true;
+        }
+      }
+    }
+  }
+
+  if (clicked) {
+    console.log('Waiting for redirect after authorization...');
+    if (typeof container.waitForTimeout === 'function') {
+      await container.waitForTimeout(8000);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Handle clicking Continue on the "Select Account" / "Seleccionar cuenta" authorization screen.
+ * @param {import('playwright-core').Page} page 
+ * @returns {Promise<boolean>}
+ */
+export async function handleAccountSelection(page) {
+  const isAuthScreen = await isAccountSelectionScreen(page);
+  const continueBtnCheck = page.locator('button.cus-button.primary.success');
+  const hasContinueBtn = (typeof continueBtnCheck.count === 'function' ? await continueBtnCheck.count().catch(() => 0) : 0) > 0;
+
+  if (!isAuthScreen && !hasContinueBtn) {
+    // Check if it's inside any frame
+    if (typeof page.frames === 'function') {
+      const frames = page.frames();
+      for (const frame of frames) {
+        if (await isAccountSelectionScreen(frame)) {
+          return await clickContinueOnContainer(frame);
+        }
+      }
+    }
+    return false;
+  }
+
+  return await clickContinueOnContainer(page);
+}
+
+/**
+ * Get locator for login buttons in both English and Spanish.
+ * Retains 'span:has-text("Log In")' for test compatibility.
+ * @param {import('playwright-core').Page} page
+ * @returns {import('playwright-core').Locator}
+ */
+export function getLoginButtonLocator(page) {
+  return page.locator(
+    'span:has-text("Log In"), button:has-text("Log In"), a:has-text("Log In"), ' +
+    'span:has-text("Iniciar sesión"), button:has-text("Iniciar sesión"), a:has-text("Iniciar sesión"), ' +
+    'span:has-text("Iniciar sesion"), button:has-text("Iniciar sesion"), a:has-text("Iniciar sesion"), ' +
+    'span:has-text("Sign in"), button:has-text("Sign in"), a:has-text("Sign in"), ' +
+    'span:has-text("Sign In"), button:has-text("Sign In"), a:has-text("Sign In"), ' +
+    'div.login, [class*="header-login"], [class*="login-btn"]'
+  );
+}
+
+/**
+ * Attempt to restore the user's session automatically.
+ * When the session expires, Creality Cloud retains the SSO account in the Account Center.
+ * Clicking "Iniciar sesión" / "Log In" shows "Seleccionar cuenta" / "Select Account",
+ * and clicking "Continuar" / "Continue" restores the session without re-entering credentials.
+ * @param {import('playwright-core').Page} page
+ * @returns {Promise<boolean>}
+ */
+export async function restoreSession(page) {
+  console.log('Attempting automatic session restoration...');
+
+  // 1. Check if the page is already on the account selection screen
+  if (await isAccountSelectionScreen(page)) {
+    console.log('Account selection screen is already visible.');
+    const handled = await handleAccountSelection(page);
+    if (handled) {
+      if (typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(3000);
+      }
+      return await isLoggedIn(page);
+    }
+  }
+
+  // 2. Look for the login button ("Iniciar sesión", "Log In", "Sign in")
+  const loginLocator = getLoginButtonLocator(page);
+  let loginButton = null;
+
+  try {
+    if (typeof loginLocator.count === 'function') {
+      const count = await loginLocator.count();
+      for (let i = 0; i < count; i++) {
+        const el = loginLocator.nth(i);
+        const isVis = await el.isVisible().catch(() => false);
+        if (isVis) {
+          loginButton = el;
+          break;
+        }
+      }
+    } else if (typeof loginLocator.first === 'function') {
+      const first = loginLocator.first();
+      if (await first.isVisible().catch(() => false)) {
+        loginButton = first;
+      }
+    }
+  } catch (err) {
+    console.log('[Diagnostic] Error scanning for login button:', err.message);
+  }
+
+  if (!loginButton) {
+    console.log('No visible login button found to restore session.');
+    return false;
+  }
+
+  console.log('Login button found. Clicking to trigger account authorization...');
+
+  // Prepare popup listener in case login opens in a new tab/window
+  let popupPromise = null;
+  if (page.context && typeof page.context === 'function') {
+    const ctx = page.context();
+    if (ctx && typeof ctx.waitForEvent === 'function') {
+      popupPromise = ctx.waitForEvent('page', { timeout: 4000 }).catch(() => null);
+    }
+  }
+
+  try {
+    await loginButton.click({ timeout: 5000 });
+  } catch (clickErr) {
+    console.log(`Standard click on login button failed: ${clickErr.message}. Trying evaluate click...`);
+    if (typeof loginButton.evaluate === 'function') {
+      await loginButton.evaluate(node => node.click()).catch(() => {});
+    }
+  }
+
+  // Check if a popup was opened
+  let popupPage = null;
+  if (popupPromise) {
+    popupPage = await popupPromise;
+  }
+
+  if (popupPage) {
+    console.log('Login opened in a popup window. Handling authorization in popup...');
+    if (typeof popupPage.waitForLoadState === 'function') {
+      await popupPage.waitForLoadState('domcontentloaded').catch(() => {});
+    }
+    await popupPage.waitForTimeout(2000);
+    await handleAccountSelection(popupPage);
+    if (typeof popupPage.waitForEvent === 'function') {
+      await popupPage.waitForEvent('close', { timeout: 10000 }).catch(() => {});
+    }
+    await page.waitForTimeout(3000);
+  } else {
+    // Handled in same page or modal
+    console.log('Waiting for authorization modal or redirect...');
+    await page.waitForTimeout(4000);
+    await handleAccountSelection(page);
+    await page.waitForTimeout(3000);
+  }
+
+  const loggedIn = await isLoggedIn(page);
+  if (loggedIn) {
+    console.log('✅ Session successfully restored via SSO account selection!');
+  } else {
+    console.log('❌ Could not restore session automatically.');
+  }
+
+  return loggedIn;
+}
+
+/**
  * Check if the user is currently logged in on the page.
  * @param {import('playwright-core').Page} page 
  * @returns {Promise<boolean>}
@@ -80,12 +338,20 @@ export async function isLoggedIn(page) {
     console.log('⚠️ [Diagnostic] Bot detection page detected (Cloudflare/DataDome)! The browser is being blocked.');
   }
 
+  // Check if account selection screen is visible (if so, user is in authorization flow, not logged in yet)
+  const authScreenVisible = await isAccountSelectionScreen(page);
+  if (authScreenVisible) {
+    console.log('[Diagnostic] Account selection authorization screen is currently displayed.');
+    return false;
+  }
+
   // Check if a login indicator or button is visible
-  const loginButton = page.locator('span:has-text("Log In"), button:has-text("Log In"), a:has-text("Log In")');
+  const loginButton = getLoginButtonLocator(page);
   
   try {
     const visible = await loginButton.first().isVisible();
     if (visible) {
+      console.log('[Diagnostic] Login button is visible on page.');
       return false;
     }
   } catch (error) {
@@ -116,19 +382,39 @@ export async function isLoggedIn(page) {
 /**
  * Execute the check-in process.
  * @param {import('playwright-core').Page} page 
- * @returns {Promise<{success: boolean, message: string}>}
+ * @returns {Promise<{success: boolean, message: string, screenshotPath?: string}>}
  */
 export async function executeCheckin(page) {
   const url = 'https://www.crealitycloud.com/check-in';
   console.log(`Navigating to ${url}...`);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-  // Verify login status
-  const loggedIn = await isLoggedIn(page);
+  // Verify login status, attempting automatic restoration if session is lost
+  let loggedIn = await isLoggedIn(page);
   if (!loggedIn) {
+    console.log('User is not logged in. Attempting automatic session restoration...');
+    loggedIn = await restoreSession(page);
+
+    // If successfully restored, ensure we are on the check-in page
+    if (loggedIn) {
+      const currentUrl = typeof page.url === 'function' ? page.url() : '';
+      if (!currentUrl.includes('check-in')) {
+        console.log(`Navigating back to check-in page from ${currentUrl}...`);
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+      }
+    }
+  }
+
+  if (!loggedIn) {
+    const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-failed.png');
+    if (typeof page.screenshot === 'function') {
+      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+    }
     return {
       success: false,
-      message: 'User is not logged in. Please run npm run login first to log in manually.'
+      message: 'User is not logged in and session could not be restored automatically. Please run npm run login first to log in manually.',
+      screenshotPath
     };
   }
 
@@ -285,17 +571,8 @@ export async function executeRaffle(page) {
   // 1. Wait a moment for page load
   await page.waitForTimeout(5000);
 
-  // 2. Handle the "Select Account" authorization screen if present
-  const hasSelectAccount = await page.locator('text=Select Account').count() > 0;
-  if (hasSelectAccount) {
-    console.log('Authorization screen detected. Clicking "Continue"...');
-    const continueBtn = page.locator('button.cus-button.primary.success');
-    if (await continueBtn.count() > 0) {
-      await continueBtn.click();
-      console.log('Waiting for redirect...');
-      await page.waitForTimeout(8000);
-    }
-  }
+  // 2. Handle the "Select Account" / "Seleccionar cuenta" authorization screen if present
+  await handleAccountSelection(page);
 
   // 3. Read the number of remaining draws
   const numLocator = page.locator('.lucky-draw-left .num');
@@ -307,7 +584,10 @@ export async function executeRaffle(page) {
     console.log(`Saved screenshot to ${screenshotPath}`);
     errorScreenshots.push(screenshotPath);
 
-    if (bodyText.includes('Select Account') || bodyText.includes('Continue share.crealitycloud.com')) {
+    if (
+      /Select Account|Seleccionar cuenta/i.test(bodyText) ||
+      /Continu(?:e|ar)\s+(?:share\.)?crealitycloud\.com/i.test(bodyText)
+    ) {
       return {
         success: false,
         message: 'Could not bypass the authorization screen.',
@@ -398,6 +678,10 @@ export async function executeRaffle(page) {
         }
 
         if (prizeText) {
+          const match = prizeText.replace(/\s+/g, ' ').match(/(?:Congratulations|Felicidades)!\s*(.*?)\s*(?:has|have|is|are|been|added|se\s+ha|se\s+han)/i);
+          if (match && match[1]) {
+            prizeText = match[1].trim();
+          }
           prizeWon = prizeText;
         }
       }

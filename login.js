@@ -1,5 +1,5 @@
 import readline from 'readline';
-import { launchBrowser, isLoggedIn } from './src/checkinService.js';
+import { launchBrowser, isLoggedIn, restoreSession } from './src/checkinService.js';
 
 async function main() {
   console.log('=====================================================');
@@ -22,6 +22,20 @@ async function main() {
 
     console.log('Navigating to Creality Cloud Check-in page...');
     await page.goto('https://www.crealitycloud.com/check-in', { waitUntil: 'domcontentloaded' });
+
+    // Check if session can be restored automatically right away
+    const initialLogged = await isLoggedIn(page);
+    if (!initialLogged) {
+      console.log('\nChecking if existing SSO session can be restored automatically...');
+      const restored = await restoreSession(page);
+      if (restored) {
+        console.log('\n[SUCCESS] Session automatically restored via SSO account selection! Session saved.');
+        return;
+      }
+    } else {
+      console.log('\n[SUCCESS] Already logged in! Session is valid.');
+      return;
+    }
 
     // Set up readline interface
     const rl = readline.createInterface({

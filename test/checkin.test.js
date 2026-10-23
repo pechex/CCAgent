@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getBrowserPath, launchBrowser, isLoggedIn, executeCheckin, executeRaffle } from '../src/checkinService.js';
+import {
+  getBrowserPath,
+  launchBrowser,
+  isLoggedIn,
+  executeCheckin,
+  executeRaffle,
+  isAccountSelectionScreen,
+  handleAccountSelection,
+  restoreSession,
+  getLoginButtonLocator
+} from '../src/checkinService.js';
 import { firefox } from 'playwright-core';
 
 // Mock playwright-core
@@ -19,12 +29,17 @@ vi.mock('playwright-core', () => {
 // Mock fs to simulate browser binary existence
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal();
+  const existsSync = vi.fn((path) => {
+    if (typeof path === 'string' && path.endsWith('bin/firefox')) return true;
+    return actual.existsSync(path);
+  });
   return {
     ...actual,
-    existsSync: vi.fn((path) => {
-      if (path.endsWith('bin/firefox')) return true;
-      return actual.existsSync(path);
-    })
+    default: {
+      ...actual.default,
+      existsSync
+    },
+    existsSync
   };
 });
 
@@ -447,6 +462,333 @@ describe('checkinService tests', () => {
       expect(clickStartMock).toHaveBeenCalledTimes(2);
       expect(result.prizes).toEqual(['Thanks / No Prize', 'Thanks / No Prize']);
       expect(result.errorScreenshots).toEqual([]);
+    });
+
+    it('should handle Spanish "Seleccionar cuenta" authorization screen during raffle', async () => {
+      const clickContinueMock = vi.fn();
+      const clickStartMock = vi.fn();
+      let numCalls = 0;
+
+      const mockPage = {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        screenshot: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector === 'text=/Seleccionar cuenta|Select Account/i' || selector === 'text=Select Account') {
+            return { count: vi.fn().mockResolvedValue(1) };
+          }
+          if (selector === 'button:has-text("Continuar")' || selector === 'button.cus-button.primary.success') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                click: clickContinueMock
+              })
+            };
+          }
+          if (selector === '.lucky-draw-left .num') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              innerText: vi.fn().mockImplementation(async () => {
+                numCalls++;
+                return numCalls === 1 ? '1' : '0';
+              })
+            };
+          }
+          if (selector === '.start-btn') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              click: clickStartMock
+            };
+          }
+          if (selector.includes('.el-dialog__wrapper')) {
+            return {
+              filter: vi.fn().mockReturnThis(),
+              first: vi.fn().mockImplementation(() => ({
+                waitFor: vi.fn().mockResolvedValue(undefined),
+                count: vi.fn().mockResolvedValue(1),
+                innerText: vi.fn().mockResolvedValue('Felicidades! 500 Puntos se han añadido a tu cuenta.'),
+                locator: vi.fn(() => ({
+                  count: vi.fn().mockResolvedValue(1),
+                  isVisible: vi.fn().mockResolvedValue(true),
+                  innerText: vi.fn().mockResolvedValue('500 Puntos'),
+                  filter: vi.fn().mockReturnThis(),
+                  first: vi.fn().mockReturnValue({
+                    click: vi.fn(),
+                    waitFor: vi.fn().mockResolvedValue(undefined),
+                    count: vi.fn().mockResolvedValue(1),
+                    isVisible: vi.fn().mockResolvedValue(true)
+                  })
+                }))
+              }))
+            };
+          }
+          return { count: vi.fn().mockResolvedValue(0) };
+        })
+      };
+
+      const result = await executeRaffle(mockPage);
+      expect(result.success).toBe(true);
+      expect(clickContinueMock).toHaveBeenCalled();
+      expect(clickStartMock).toHaveBeenCalled();
+      expect(result.prizes).toEqual(['500 Puntos']);
+    });
+  });
+
+  describe('Session restoration and multi-language authorization tests', () => {
+    it('should detect logged out state when Spanish "Iniciar sesión" is visible', async () => {
+      const mockPage = {
+        waitForTimeout: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector.includes('Iniciar sesión')) {
+            return {
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true)
+              })
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(false)
+            })
+          };
+        })
+      };
+
+      const loggedIn = await isLoggedIn(mockPage);
+      expect(loggedIn).toBe(false);
+    });
+
+    it('should detect logged out state when account selection authorization screen is visible', async () => {
+      const mockPage = {
+        waitForTimeout: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector.includes('Seleccionar cuenta')) {
+            return {
+              count: vi.fn().mockResolvedValue(1)
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(false)
+            })
+          };
+        })
+      };
+
+      const loggedIn = await isLoggedIn(mockPage);
+      expect(loggedIn).toBe(false);
+    });
+
+    it('should identify account selection screen in Spanish ("Seleccionar cuenta")', async () => {
+      const mockPage = {
+        locator: vi.fn((selector) => {
+          if (selector.includes('Seleccionar cuenta')) {
+            return { count: vi.fn().mockResolvedValue(1) };
+          }
+          return { count: vi.fn().mockResolvedValue(0) };
+        })
+      };
+
+      const isAuth = await isAccountSelectionScreen(mockPage);
+      expect(isAuth).toBe(true);
+    });
+
+    it('should click Continue button and succeed in handleAccountSelection', async () => {
+      const clickContinueMock = vi.fn();
+      const mockPage = {
+        waitForTimeout: vi.fn(),
+        locator: vi.fn((selector) => {
+          if (selector.includes('Seleccionar cuenta')) {
+            return { count: vi.fn().mockResolvedValue(1) };
+          }
+          if (selector === 'button.cus-button.primary.success') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                click: clickContinueMock
+              })
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({ isVisible: vi.fn().mockResolvedValue(false) })
+          };
+        })
+      };
+
+      const handled = await handleAccountSelection(mockPage);
+      expect(handled).toBe(true);
+      expect(clickContinueMock).toHaveBeenCalled();
+      expect(mockPage.waitForTimeout).toHaveBeenCalledWith(8000);
+    });
+
+    it('should restore session by clicking login button then continue button', async () => {
+      const clickLoginMock = vi.fn();
+      const clickContinueMock = vi.fn();
+      let step = 'logged_out';
+
+      const mockPage = {
+        waitForTimeout: vi.fn(),
+        context: () => ({
+          waitForEvent: vi.fn().mockResolvedValue(null)
+        }),
+        locator: vi.fn((selector) => {
+          if (selector.includes('Iniciar sesión') || selector.includes('span:has-text("Log In")')) {
+            return {
+              count: vi.fn().mockResolvedValue(step === 'logged_out' ? 1 : 0),
+              nth: vi.fn(() => ({
+                isVisible: vi.fn().mockResolvedValue(step === 'logged_out'),
+                click: vi.fn().mockImplementation(async () => {
+                  clickLoginMock();
+                  step = 'auth_screen';
+                })
+              })),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(step === 'logged_out'),
+                click: vi.fn().mockImplementation(async () => {
+                  clickLoginMock();
+                  step = 'auth_screen';
+                })
+              })
+            };
+          }
+          if (selector.includes('Seleccionar cuenta')) {
+            return {
+              count: vi.fn().mockResolvedValue(step === 'auth_screen' ? 1 : 0)
+            };
+          }
+          if (selector === 'button.cus-button.primary.success' || selector.includes('Continuar')) {
+            return {
+              count: vi.fn().mockResolvedValue(step === 'auth_screen' ? 1 : 0),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                click: vi.fn().mockImplementation(async () => {
+                  clickContinueMock();
+                  step = 'logged_in';
+                })
+              })
+            };
+          }
+          if (selector.includes('img[src*="avatar"]')) {
+            return {
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(step === 'logged_in')
+              })
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({ isVisible: vi.fn().mockResolvedValue(false) })
+          };
+        })
+      };
+
+      const restored = await restoreSession(mockPage);
+      expect(restored).toBe(true);
+      expect(clickLoginMock).toHaveBeenCalled();
+      expect(clickContinueMock).toHaveBeenCalled();
+    });
+
+    it('should recover from logged out state in executeCheckin and complete check-in', async () => {
+      let state = 'logged_out';
+      const clickLoginMock = vi.fn();
+      const clickContinueMock = vi.fn();
+      const clickCheckinMock = vi.fn();
+
+      const mockPage = {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        screenshot: vi.fn(),
+        url: vi.fn().mockImplementation(() => {
+          return state === 'logged_in' ? 'https://www.crealitycloud.com/check-in' : 'https://www.crealitycloud.com/es';
+        }),
+        context: () => ({
+          waitForEvent: vi.fn().mockResolvedValue(null)
+        }),
+        locator: vi.fn((selector) => {
+          if (selector.includes('Iniciar sesión') || selector.includes('span:has-text("Log In")')) {
+            return {
+              count: vi.fn().mockResolvedValue(state === 'logged_out' ? 1 : 0),
+              nth: vi.fn(() => ({
+                isVisible: vi.fn().mockResolvedValue(state === 'logged_out'),
+                click: vi.fn().mockImplementation(async () => {
+                  clickLoginMock();
+                  state = 'auth_screen';
+                })
+              })),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(state === 'logged_out'),
+                click: vi.fn().mockImplementation(async () => {
+                  clickLoginMock();
+                  state = 'auth_screen';
+                })
+              })
+            };
+          }
+          if (selector.includes('Seleccionar cuenta')) {
+            return {
+              count: vi.fn().mockResolvedValue(state === 'auth_screen' ? 1 : 0)
+            };
+          }
+          if (selector === 'button.cus-button.primary.success') {
+            return {
+              count: vi.fn().mockResolvedValue(state === 'auth_screen' ? 1 : 0),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                click: vi.fn().mockImplementation(async () => {
+                  clickContinueMock();
+                  state = 'logged_in';
+                })
+              })
+            };
+          }
+          if (selector.includes('img[src*="avatar"]')) {
+            return {
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(state === 'logged_in')
+              })
+            };
+          }
+          if (selector === 'iframe.iframe-box') {
+            return {
+              count: vi.fn().mockResolvedValue(1)
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({ isVisible: vi.fn().mockResolvedValue(false) })
+          };
+        }),
+        frameLocator: vi.fn(() => ({
+          locator: vi.fn((selector) => {
+            if (selector === '.sign-in-btn, button, [role="button"], a') {
+              return {
+                filter: () => ({
+                  count: vi.fn().mockResolvedValue(1),
+                  nth: vi.fn(() => ({
+                    textContent: vi.fn().mockResolvedValue('Fichar ahora'),
+                    isVisible: vi.fn().mockResolvedValue(true),
+                    scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
+                    click: clickCheckinMock
+                  }))
+                })
+              };
+            }
+            return { count: vi.fn().mockResolvedValue(0) };
+          })
+        }))
+      };
+
+      const result = await executeCheckin(mockPage);
+      expect(result.success).toBe(true);
+      expect(clickLoginMock).toHaveBeenCalled();
+      expect(clickContinueMock).toHaveBeenCalled();
+      expect(clickCheckinMock).toHaveBeenCalled();
+      expect(result.message).toContain('Fichar ahora');
     });
   });
 });
