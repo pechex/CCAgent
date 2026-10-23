@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/pechex/CCAgent/compare/v1.0.2...v1.1.0) (2026-10-23)
+
+
+### Features
+
+* implement automated SSO session restoration and account selection handling ([9ae0e3a](https://github.com/pechex/CCAgent/commit/9ae0e3a8f5f106cceb9cda3812dd2e2ec7b0a870))
+
 ## [1.0.2](https://github.com/pechex/CCAgent/compare/v1.0.1...v1.0.2) (2026-07-18)
 
 
