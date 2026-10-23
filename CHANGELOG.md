@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/pechex/CCAgent/compare/v1.1.0...v1.1.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* resolve invisible firefox download URL in docker build ([54324d1](https://github.com/pechex/CCAgent/commit/54324d1f3c3f202eadab2052b1dbef1de6951600))
+
 # [1.1.0](https://github.com/pechex/CCAgent/compare/v1.0.2...v1.1.0) (2026-10-23)
 
 
