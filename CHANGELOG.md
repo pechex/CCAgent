@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/pechex/CCAgent/compare/v1.1.1...v1.2.0) (2026-10-26)
+
+
+### Features
+
+* add other ways of gaining points ([7c17e22](https://github.com/pechex/CCAgent/commit/7c17e22ab0a3d10c0891ec1cbb9af8d80322f9b0))
+
 ## [1.1.1](https://github.com/pechex/CCAgent/compare/v1.1.0...v1.1.1) (2026-10-23)
 
 
