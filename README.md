@@ -112,16 +112,69 @@ If you prefer to develop locally or not use Docker, you can run the application 
    ```bash
    bash download-browser.sh
    ```
-3. Create a `.env` file to configure your timezone and headless mode:
+3. Create a `.env` file to configure your timezone, headless mode, and tasks:
    ```ini
    STEALTH_TIMEZONE=America/Argentina/Buenos_Aires
    STEALTH_SEED=42
-   HEADLESS=false # false for login, true for daily check-in
+   HEADLESS=false # false for login, true for daily automation
+
+   # Daily Points & Tasks Configuration
+   ENABLE_CHECKIN=true
+   ENABLE_RAFFLE=true
+   ENABLE_DOWNLOADS=true
+   DOWNLOADS_COUNT=10
+   ENABLE_IMAGE_COMMENTS=true
+   IMAGE_COMMENTS_COUNT=5
+   ENABLE_TEXT_COMMENT=true
+   ENABLE_BOOST=true
+
+   # (Opcional) El ID de usuario se detecta automáticamente de la sesión guardada.
+   # Solo defínelo si deseas sobreescribir la detección automática:
+   # CREALITY_USER_ID=xxxxxxxxxx
+   # CREALITY_BOOST_URL=https://www.crealitycloud.com/es/user/xxxxxxxxxx/boost
    ```
 
 ### Local Usage
 - **Manual Login:** `npm run login` (opens the browser window via WSLg, log in, and press ENTER in the terminal).
-- **Daily Check-in:** `npm run checkin`.
+- **Run All Daily Tasks:** `npm run checkin` (or `npm run tasks`).
+- **Run Only Downloads:** `npm run downloads`.
+- **Run Only Comments:** `npm run comments`.
+- **Run Only Boost:** `npm run boost`.
+
+### CLI Flags
+You can run specific tasks or exclude tasks using command-line arguments:
+- `node checkin.js --only-downloads`: Only execute model downloads & likes.
+- `node checkin.js --only-comments`: Only execute comments (both image and text).
+- `node checkin.js --only-boost`: Only execute boost checking & granting.
+- `node checkin.js --only-checkin`: Only execute check-in & raffle.
+- `node checkin.js --skip-downloads`: Run everything except downloads.
+- `node checkin.js --skip-comments`: Run everything except comments.
+- `node checkin.js --skip-boost`: Run everything except boost.
+
+---
+
+## 🎯 Daily Automation Features ([Points Center](https://www.crealitycloud.com/es/incentive-points?thirdType=earn-points))
+
+The bot automates all key tasks to maximize daily reward points:
+
+1. **Daily Check-in & Raffle Draws:**
+   - Automatically visits the check-in page and confirms attendance.
+   - Spins the Lucky Draw raffle wheel if tickets are available.
+
+2. **10 Model Downloads & Likes:**
+   - Downloads 10 distinct random models every day.
+   - Marks each downloaded model with a **Like** to track downloads and fulfill the daily likes task.
+   - Persistent history (`user_session/downloaded_models.json`) prevents ever repeating the same model.
+
+3. **5 Comments with Image:**
+   - Leaves 5 friendly feedback comments with an attached thumbs-up emoji (`assets/thumbs_up.jpg`).
+
+4. **Model Comment (Without Image):**
+   - Posts a feedback comment on a 3D model without attaching an image.
+
+5. **Auto-Boost:**
+   - Inspects the user's boost page (`https://www.crealitycloud.com/es/user/{userId}/boost`).
+   - If boost tickets are available, applies them to eligible models automatically.
 
 ---
 

@@ -35,19 +35,34 @@ export async function launchBrowser(headless = true) {
     throw new Error(`Custom Firefox binary not found at: ${binaryPath}. Please run download-browser.sh first.`);
   }
 
-  const headlessValue = headless ? 'true' : false;
+  // Clean up any stale lock files if browser crashed or was terminated
+  try {
+    const parentLock = path.join(USER_SESSION_DIR, '.parentlock');
+    const lock = path.join(USER_SESSION_DIR, 'lock');
+    if (fs.existsSync(parentLock)) fs.unlinkSync(parentLock);
+    if (fs.existsSync(lock)) fs.unlinkSync(lock);
+  } catch (e) {}
 
   console.log(`Launching Invisible Firefox (headless: ${headless})...`);
   
+  const targetTz = process.env.STEALTH_TIMEZONE || process.env.TZ || 'America/Argentina/Buenos_Aires';
+  if (!process.env.TZ) {
+    process.env.TZ = targetTz;
+  }
+
+  const isHeadless = process.env.HEADLESS !== undefined ? process.env.HEADLESS === 'true' : headless;
+
   const context = await firefox.launchPersistentContext(USER_SESSION_DIR, {
     executablePath: binaryPath,
-    headless: headlessValue === 'true',
+    headless: isHeadless,
     viewport: null,
+    timezoneId: targetTz,
     // Env vars required by invisible_playwright
     env: {
       ...process.env,
+      TZ: targetTz,
       STEALTHFOX_SEED: process.env.STEALTH_SEED || '42',
-      STEALTHFOX_TIMEZONE: process.env.STEALTH_TIMEZONE || 'America/New_York',
+      STEALTHFOX_TIMEZONE: targetTz,
       MOZ_DISABLE_CONTENT_SANDBOX: '1'
     }
   });
@@ -821,4 +836,7 @@ export async function executeRaffle(page) {
     errorScreenshots
   };
 }
+
+// Re-export task service methods for backward compatibility
+export * from './taskService.js';
 

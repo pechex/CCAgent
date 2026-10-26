@@ -14,6 +14,19 @@ services:
       - STEALTH_SEED=42
       - TZ=America/Argentina/Buenos_Aires
       - MOZ_DISABLE_CONTENT_SANDBOX=1
+      - ENABLE_CHECKIN=true
+      - ENABLE_RAFFLE=true
+      - ENABLE_DOWNLOADS=true
+      - DOWNLOADS_COUNT=1
+      - ENABLE_IMAGE_COMMENTS=true
+      - IMAGE_COMMENTS_COUNT=1
+      - ENABLE_TEXT_COMMENT=true
+      - ENABLE_BOOST=true
+
+      # (Optional) User ID and Boost URL are automatically detected from the active session.
+      # Uncomment only if you want to override with a specific manual user ID or boost URL:
+      # - CREALITY_USER_ID=xxxxxx
+      # - CREALITY_BOOST_URL=https://www.crealitycloud.com/es/user/xxxxxx/boost
     volumes:
       # Persist user login session across container runs
       - ./user_session:/app/user_session
@@ -21,5 +34,6 @@ services:
       - ./src:/app/src
       - ./checkin.js:/app/checkin.js
       - ./login.js:/app/login.js
+      - ./assets:/app/assets
     stdin_open: true # Keep stdin open (equivalent to -i)
     tty: true        # Enable tty terminal (equivalent to -t)

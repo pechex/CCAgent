@@ -7,6 +7,10 @@
   "scripts": {
     "login": "node login.js",
     "checkin": "node checkin.js",
+    "tasks": "node checkin.js",
+    "downloads": "node checkin.js --only-downloads",
+    "comments": "node checkin.js --only-comments",
+    "boost": "node checkin.js --only-boost",
     "test": "vitest run"
   },
   "dependencies": {
