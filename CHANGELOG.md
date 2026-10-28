@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/pechex/CCAgent/compare/v1.2.0...v1.3.0) (2026-10-28)
+
+
+### Features
+
+* add collection task support and improve check-in execution retry logic ([84868ad](https://github.com/pechex/CCAgent/commit/84868ad6c30731c33b2a1efda613824f3b2ab119))
+
 # [1.2.0](https://github.com/pechex/CCAgent/compare/v1.1.1...v1.2.0) (2026-10-26)
 
 
