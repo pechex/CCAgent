@@ -47,7 +47,8 @@ async function main() {
   const onlyComments = hasArg('--only-comments');
   const onlyBoost = hasArg('--only-boost');
   const onlyCheckin = hasArg('--only-checkin');
-  const isExclusiveMode = onlyDownloads || onlyComments || onlyBoost || onlyCheckin;
+  const onlyCollect = hasArg('--only-collection') || hasArg('--only-collect');
+  const isExclusiveMode = onlyDownloads || onlyComments || onlyBoost || onlyCheckin || onlyCollect;
 
   // Configure tasks: missing environment variables ALWAYS default to true
   const enableCheckin = isExclusiveMode
@@ -76,6 +77,11 @@ async function main() {
     ? onlyBoost
     : envBool(process.env.ENABLE_BOOST, true) && !hasArg('--skip-boost');
 
+  const enableCollection = isExclusiveMode
+    ? onlyCollect
+    : envBool(process.env.ENABLE_COLLECTION, true) && !hasArg('--skip-collection');
+  const collectionsCount = parseInt(process.env.COLLECTIONS_COUNT, 10) || 1;
+
   const configuredUserId = process.env.CREALITY_USER_ID;
   const configuredBoostUrl = process.env.CREALITY_BOOST_URL;
 
@@ -86,6 +92,7 @@ async function main() {
   console.log(`  - Image Comments:    ${enableImageComments ? `ENABLED (${imageCommentsCount} comments with 👍)` : 'DISABLED'}`);
   console.log(`  - Text Comment:      ${enableTextComment ? 'ENABLED (1 model)' : 'DISABLED'}`);
   console.log(`  - Auto Boost:        ${enableBoost ? `ENABLED (${configuredUserId ? `User: ${configuredUserId}` : 'Auto-detecting user ID'})` : 'DISABLED'}`);
+  console.log(`  - Collection Models: ${enableCollection ? `ENABLED (${collectionsCount} models)` : 'DISABLED'}`);
   console.log('=====================================================');
 
   let notificationTitle = 'Creality Cloud Status: ❌ FAILED';
@@ -145,10 +152,10 @@ async function main() {
       }
     }
 
-    // 3. Single-Pass Model Tasks: Downloads, Likes, Comments, and Boost
-    const anyModelTaskEnabled = enableDownloads || enableImageComments || enableTextComment || enableBoost;
+    // 3. Single-Pass Model Tasks: Downloads, Likes, Comments, Boost, and Collection
+    const anyModelTaskEnabled = enableDownloads || enableImageComments || enableTextComment || enableBoost || enableCollection;
     if (anyModelTaskEnabled) {
-      console.log('\n--- Task 3: Unified Model Processing (Downloads, Likes, Comments & Boost) ---');
+      console.log('\n--- Task 3: Unified Model Processing (Downloads, Likes, Comments, Boost & Collection) ---');
       const detectedUserId = configuredUserId || (await getLoggedInUserId(page));
       const targetBoostUrl = configuredBoostUrl || (detectedUserId ? `https://www.crealitycloud.com/es/user/${detectedUserId}/boost` : undefined);
 
@@ -160,6 +167,8 @@ async function main() {
         enableTextComment,
         textCommentsCount: 1,
         enableBoost,
+        enableCollection,
+        collectionsCount,
         userId: detectedUserId,
         boostUrl: targetBoostUrl
       });
@@ -184,6 +193,9 @@ async function main() {
       }
       if (enableBoost) {
         notificationSections.push(`🚀 Boost: ${q.boosts.completed}/${q.boosts.target} boosts granted`);
+      }
+      if (enableCollection && q.collections) {
+        notificationSections.push(`⭐ Collection: ${q.collections.completed}/${q.collections.target} models`);
       }
     }
 

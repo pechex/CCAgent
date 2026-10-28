@@ -21,7 +21,10 @@ import {
   INCENTIVE_POINTS_URL,
   getIncentiveTasks,
   clickIncentiveTaskAction,
-  extractModelsFromCurrentPage
+  extractModelsFromCurrentPage,
+  collectModel,
+  isModelCollected,
+  applyBoostToModel
 } from '../src/taskService.js';
 import { envBool } from '../checkin.js';
 
@@ -1155,6 +1158,167 @@ describe('taskService tests', () => {
       expect(models.length).toBe(2);
       expect(models[0].id).toBe('model-a');
       expect(models[1].id).toBe('model-b');
+    });
+  });
+
+  describe('collectModel & isModelCollected', () => {
+    it('should detect when model is already collected', async () => {
+      const mockPage = {
+        locator: vi.fn(() => ({
+          count: vi.fn().mockResolvedValue(1),
+          first: () => ({
+            isVisible: vi.fn().mockResolvedValue(true),
+            evaluate: vi.fn().mockResolvedValue(true)
+          })
+        }))
+      };
+
+      const collected = await isModelCollected(mockPage);
+      expect(collected).toBe(true);
+    });
+
+    it('should click collect button and confirm dialog when not yet collected', async () => {
+      let clickedCollect = false;
+      let clickedConfirm = false;
+
+      const mockPage = {
+        locator: vi.fn((sel) => {
+          if (sel === '.model-interaction-comp .collect') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                evaluate: vi.fn().mockResolvedValue(false),
+                scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(),
+                click: vi.fn(async () => { clickedCollect = true; })
+              })
+            };
+          }
+          if (sel === '.el-dialog, [role="dialog"]') {
+            return {
+              filter: () => ({
+                count: vi.fn().mockResolvedValue(1),
+                first: () => ({
+                  isVisible: vi.fn().mockResolvedValue(true),
+                  locator: vi.fn((subSel) => {
+                    if (subSel.includes('Confirmar')) {
+                      return {
+                        count: vi.fn().mockResolvedValue(1),
+                        first: () => ({
+                          click: vi.fn(async () => { clickedConfirm = true; })
+                        })
+                      };
+                    }
+                    return { count: vi.fn().mockResolvedValue(0) };
+                  })
+                })
+              })
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({
+              isVisible: vi.fn().mockResolvedValue(false),
+              evaluate: vi.fn().mockResolvedValue(false)
+            })
+          };
+        }),
+        waitForTimeout: vi.fn()
+      };
+
+      const result = await collectModel(mockPage);
+      expect(result).toBe(true);
+      expect(clickedCollect).toBe(true);
+      expect(clickedConfirm).toBe(true);
+    });
+  });
+
+  describe('applyBoostToModel', () => {
+    it('should click boost button, select option chip, and confirm', async () => {
+      let clickedBoost = false;
+      let clickedChip = false;
+      let clickedConfirm = false;
+
+      const mockPage = {
+        locator: vi.fn((sel) => {
+          if (sel === '.model-interaction-box .boost-btn') {
+            return {
+              count: vi.fn().mockResolvedValue(1),
+              first: () => ({
+                isVisible: vi.fn().mockResolvedValue(true),
+                scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(),
+                click: vi.fn(async () => { clickedBoost = true; })
+              })
+            };
+          }
+          if (sel === '.el-dialog, [role="dialog"]') {
+            return {
+              filter: vi.fn(({ hasText }) => {
+                const regexStr = hasText ? hasText.toString() : '';
+                if (regexStr.includes('felicitar al creador') || regexStr.includes('Impulsar el modelo')) {
+                  return {
+                    count: vi.fn().mockResolvedValue(1),
+                    first: () => ({
+                      isVisible: vi.fn().mockResolvedValue(true),
+                      locator: vi.fn((subSel) => {
+                        if (subSel.includes('Gran superficie') || subSel.includes('.el-tag')) {
+                          return {
+                            count: vi.fn().mockResolvedValue(1),
+                            first: () => ({
+                              isVisible: vi.fn().mockResolvedValue(true),
+                              click: vi.fn(async () => { clickedChip = true; })
+                            })
+                          };
+                        }
+                        if (subSel.includes('Confirmar')) {
+                          return {
+                            count: vi.fn().mockResolvedValue(1),
+                            first: () => ({
+                              click: vi.fn(async () => { clickedConfirm = true; })
+                            })
+                          };
+                        }
+                        return { count: vi.fn().mockResolvedValue(0) };
+                      })
+                    })
+                  };
+                }
+                if (regexStr.includes('Impulso exitoso')) {
+                  return {
+                    count: vi.fn().mockResolvedValue(1),
+                    first: () => ({
+                      isVisible: vi.fn().mockResolvedValue(true),
+                      locator: vi.fn((subSel) => {
+                        if (subSel.includes('Sortear Ahora')) {
+                          return {
+                            count: vi.fn().mockResolvedValue(1),
+                            first: () => ({
+                              click: vi.fn().mockResolvedValue()
+                            })
+                          };
+                        }
+                        return { count: vi.fn().mockResolvedValue(0) };
+                      })
+                    })
+                  };
+                }
+                return { count: vi.fn().mockResolvedValue(0) };
+              })
+            };
+          }
+          return {
+            count: vi.fn().mockResolvedValue(0),
+            first: () => ({ isVisible: vi.fn().mockResolvedValue(false) })
+          };
+        }),
+        waitForTimeout: vi.fn()
+      };
+
+      const result = await applyBoostToModel(mockPage);
+      expect(result).toBe(true);
+      expect(clickedBoost).toBe(true);
+      expect(clickedChip).toBe(true);
+      expect(clickedConfirm).toBe(true);
     });
   });
 });

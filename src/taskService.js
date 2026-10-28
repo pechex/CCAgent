@@ -307,6 +307,169 @@ export async function likeModel(page) {
 }
 
 /**
+ * Check if the current model page is already collected / added to favorites.
+ * @param {import('playwright-core').Page} page
+ * @returns {Promise<boolean>}
+ */
+export async function isModelCollected(page) {
+  const collectSelectors = [
+    '.model-interaction-comp .collect',
+    'div.collect.flex-all-center',
+    '.model-interaction-box .collect',
+    'div.collect',
+    '.collect',
+    'div:has(> .icon-shoucang)',
+    '.icon-shoucang'
+  ];
+
+  for (const selector of collectSelectors) {
+    try {
+      if (typeof page.locator !== 'function') continue;
+      const locator = page.locator(selector);
+      const count = typeof locator.count === 'function' ? await locator.count().catch(() => 0) : 0;
+      if (count > 0) {
+        const el = typeof locator.first === 'function' ? locator.first() : locator;
+        if (typeof el.isVisible === 'function' && await el.isVisible().catch(() => false)) {
+          if (typeof el.evaluate === 'function') {
+            const isActive = await el.evaluate((node) => {
+              if (node.classList.contains('active') ||
+                  node.classList.contains('is-active') ||
+                  node.classList.contains('collected') ||
+                  node.classList.contains('is-collected')) {
+                return true;
+              }
+              const parent = node.closest('.collect') || node;
+              if (parent && (parent.classList.contains('active') || parent.classList.contains('is-active'))) {
+                return true;
+              }
+              return false;
+            }).catch(() => false);
+
+            if (isActive) return true;
+          }
+        }
+      }
+    } catch (err) {}
+  }
+  return false;
+}
+
+/**
+ * Click the collection button on a model page and confirm the collection dialog.
+ * @param {import('playwright-core').Page} page
+ * @returns {Promise<boolean>}
+ */
+export async function collectModel(page) {
+  if (typeof ensureAuthenticated === 'function') {
+    await ensureAuthenticated(page);
+  }
+
+  const alreadyCollected = await isModelCollected(page);
+  if (alreadyCollected) {
+    console.log('Model is already collected (favorite).');
+    return true;
+  }
+
+  const collectSelectors = [
+    '.model-interaction-comp .collect',
+    'div.collect.flex-all-center',
+    '.model-interaction-box .collect',
+    'div.collect',
+    '.collect',
+    'div:has(> .icon-shoucang)',
+    '.icon-shoucang'
+  ];
+
+  let collectBtn = null;
+  for (const sel of collectSelectors) {
+    try {
+      if (typeof page.locator !== 'function') continue;
+      const loc = page.locator(sel);
+      const count = typeof loc.count === 'function' ? await loc.count().catch(() => 0) : 0;
+      if (count > 0) {
+        const el = typeof loc.first === 'function' ? loc.first() : loc;
+        if (typeof el.isVisible === 'function' && await el.isVisible().catch(() => false)) {
+          collectBtn = el;
+          console.log(`Found collect button with selector: ${sel}`);
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!collectBtn) {
+    console.log('Could not find a visible collection button on page.');
+    return false;
+  }
+
+  console.log('Clicking collection button (.collect)...');
+  if (typeof collectBtn.scrollIntoViewIfNeeded === 'function') {
+    await collectBtn.scrollIntoViewIfNeeded().catch(() => {});
+  }
+  try {
+    await collectBtn.click({ timeout: 5000 });
+  } catch (e) {
+    if (typeof collectBtn.evaluate === 'function') {
+      await collectBtn.evaluate(node => node.click()).catch(() => {});
+    }
+  }
+
+  if (typeof page.waitForTimeout === 'function') {
+    await page.waitForTimeout(2000);
+  }
+
+  // Handle confirmation dialog: "Colección" / "Collection" / "Añadir a la colección"
+  try {
+    if (typeof page.locator === 'function') {
+      const collectDialogLoc = page.locator('.el-dialog, [role="dialog"]').filter({
+        hasText: /Colecci[oó]n|Collection|Favoritos|Favorites/i
+      });
+      const dCount = typeof collectDialogLoc.count === 'function' ? await collectDialogLoc.count().catch(() => 0) : 0;
+
+      if (dCount > 0) {
+        const dialog = typeof collectDialogLoc.first === 'function' ? collectDialogLoc.first() : collectDialogLoc;
+        const isDialogVis = typeof dialog.isVisible === 'function' ? await dialog.isVisible().catch(() => false) : true;
+        if (isDialogVis) {
+          console.log('Collection dialog opened. Ensuring selection and confirming...');
+
+          // If there are collection checkboxes or items, ensure at least one is selected
+          const itemLoc = dialog.locator('.collection-item, .el-checkbox, [class*="collection-item"], label.el-checkbox');
+          if (typeof itemLoc.count === 'function' && await itemLoc.count().catch(() => 0) > 0) {
+            const firstItem = typeof itemLoc.first === 'function' ? itemLoc.first() : itemLoc;
+            if (typeof firstItem.evaluate === 'function') {
+              const isChecked = await firstItem.evaluate(el => el.classList.contains('is-checked') || !!el.querySelector('input:checked')).catch(() => false);
+              if (!isChecked) {
+                await firstItem.click({ timeout: 5000 }).catch(() => {});
+                if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(1000);
+              }
+            }
+          }
+
+          // Click confirm button
+          const confirmBtnLoc = dialog.locator('button:has-text("Confirmar"), button:has-text("Confirm"), .el-button--primary, button.confirm-btn, [class*="confirm"]');
+          if (typeof confirmBtnLoc.count === 'function' && await confirmBtnLoc.count().catch(() => 0) > 0) {
+            const confirmBtn = typeof confirmBtnLoc.first === 'function' ? confirmBtnLoc.first() : confirmBtnLoc;
+            console.log('Clicking "Confirmar" in collection dialog...');
+            try {
+              await confirmBtn.click({ timeout: 5000 });
+            } catch (e) {
+              if (typeof confirmBtn.evaluate === 'function') {
+                await confirmBtn.evaluate(node => node.click()).catch(() => {});
+              }
+            }
+            if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(2000);
+          }
+        }
+      }
+    }
+  } catch (dErr) {
+    console.log('Notice in collection dialog handling:', dErr.message);
+  }
+
+  return true;
+}
+
+/**
  * Trigger the model download button and handle download dialog/event.
  * In accordance with Creality Cloud points requirement:
  * 1. Clicks the dropdown arrow (.choose-operate) next to "Descargar 3MF".
@@ -1468,6 +1631,194 @@ export async function getAvailableBoostsCount(page) {
 }
 
 /**
+ * Apply a boost ticket to the current model page:
+ * 1. Clicks the Impulso / Boost button (.boost-btn).
+ * 2. In the "Impulsar el modelo" dialog, selects an option chip (e.g. Gran superficie, Creativo, etc.).
+ * 3. Clicks "Confirmar".
+ * 4. In the "¡Impulso exitoso!" dialog, clicks "Sortear Ahora" to spin the Boost Raffle wheel (if available), or closes it.
+ *
+ * @param {import('playwright-core').Page} page
+ * @returns {Promise<boolean>}
+ */
+export async function applyBoostToModel(page) {
+  if (typeof ensureAuthenticated === 'function') {
+    await ensureAuthenticated(page);
+  }
+
+  const boostSelectors = [
+    '.model-interaction-box .boost-btn',
+    'div.boost-btn.flex-all-center',
+    '.boost-btn',
+    '[class*="boost-btn"]',
+    'button:has-text("Impulsar")',
+    'button:has-text("Boost")',
+    'div:has-text("Impulso")'
+  ];
+
+  let boostBtn = null;
+  for (const sel of boostSelectors) {
+    try {
+      if (typeof page.locator !== 'function') continue;
+      const loc = page.locator(sel);
+      const count = typeof loc.count === 'function' ? await loc.count().catch(() => 0) : 0;
+      if (count > 0) {
+        const el = typeof loc.first === 'function' ? loc.first() : loc;
+        if (typeof el.isVisible === 'function' && await el.isVisible().catch(() => false)) {
+          boostBtn = el;
+          console.log(`Found boost button with selector: ${sel}`);
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!boostBtn) {
+    console.log('No visible boost button found on model page.');
+    return false;
+  }
+
+  if (typeof boostBtn.scrollIntoViewIfNeeded === 'function') {
+    await boostBtn.scrollIntoViewIfNeeded().catch(() => {});
+  }
+  try {
+    await boostBtn.click({ timeout: 5000 });
+  } catch (e) {
+    if (typeof boostBtn.evaluate === 'function') {
+      await boostBtn.evaluate(node => node.click()).catch(() => {});
+    }
+  }
+  if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(2500);
+
+  // 1. First dialog: "Impulsar el modelo"
+  try {
+    if (typeof page.locator === 'function') {
+      const boostDialogLoc = page.locator('.el-dialog, [role="dialog"]').filter({
+        hasText: /Impulsar el modelo|Boost model|felicitar al creador/i
+      });
+      const dCount = typeof boostDialogLoc.count === 'function' ? await boostDialogLoc.count().catch(() => 0) : 0;
+
+      if (dCount > 0) {
+        const boostDialog = typeof boostDialogLoc.first === 'function' ? boostDialogLoc.first() : boostDialogLoc;
+        if (typeof boostDialog.isVisible === 'function' && await boostDialog.isVisible().catch(() => false)) {
+          console.log('Boost modal opened ("Impulsar el modelo"). Selecting an option chip...');
+
+          const chipLocators = [
+            boostDialog.locator('text=/Gran superficie|Piezas de color|Pocos\/Sin soportes|Impresión rápida|Creativo|Bien orientado/i'),
+            boostDialog.locator('.el-tag, .tag-item, [class*="tag"], [class*="chip"], [class*="option"]'),
+            boostDialog.locator('div[class*="flex"] span, div[class*="item"]')
+          ];
+
+          for (const cLoc of chipLocators) {
+            const cCount = typeof cLoc.count === 'function' ? await cLoc.count().catch(() => 0) : 0;
+            if (cCount > 0) {
+              const chip = typeof cLoc.first === 'function' ? cLoc.first() : cLoc;
+              if (typeof chip.isVisible === 'function' && await chip.isVisible().catch(() => false)) {
+                console.log('Selecting option chip in boost dialog...');
+                try {
+                  await chip.click({ timeout: 5000 });
+                } catch (ce) {
+                  if (typeof chip.evaluate === 'function') await chip.evaluate(node => node.click()).catch(() => {});
+                }
+                break;
+              }
+            }
+          }
+
+          if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(1000);
+
+          // Click "Confirmar" button
+          const confirmBtnLoc = boostDialog.locator('button:has-text("Confirmar"), button:has-text("Confirm"), .el-button--primary, button.confirm-btn');
+          if (typeof confirmBtnLoc.count === 'function' && await confirmBtnLoc.count().catch(() => 0) > 0) {
+            const confirmBtn = typeof confirmBtnLoc.first === 'function' ? confirmBtnLoc.first() : confirmBtnLoc;
+            console.log('Clicking "Confirmar" button in boost dialog...');
+            try {
+              await confirmBtn.click({ timeout: 5000 });
+            } catch (e) {
+              if (typeof confirmBtn.evaluate === 'function') {
+                await confirmBtn.evaluate(node => node.click()).catch(() => {});
+              }
+            }
+          }
+
+          if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+        }
+      }
+    }
+  } catch (dialogErr) {
+    console.log('Notice handling boost options dialog:', dialogErr.message);
+  }
+
+  // 2. Second dialog: "¡Impulso exitoso!" with "Sortear Ahora"
+  try {
+    if (typeof page.locator === 'function') {
+      const successDialogLoc = page.locator('.el-dialog, [role="dialog"]').filter({
+        hasText: /Impulso exitoso|sorteo de impulso|Sortear Ahora/i
+      });
+      const sCount = typeof successDialogLoc.count === 'function' ? await successDialogLoc.count().catch(() => 0) : 0;
+
+      if (sCount > 0) {
+        const successDialog = typeof successDialogLoc.first === 'function' ? successDialogLoc.first() : successDialogLoc;
+        if (typeof successDialog.isVisible === 'function' && await successDialog.isVisible().catch(() => false)) {
+          console.log('Detected "¡Impulso exitoso!" dialog.');
+          const sortearBtnLoc = successDialog.locator('button:has-text("Sortear Ahora"), div:has-text("Sortear Ahora"), .el-button--primary');
+          const sortCount = typeof sortearBtnLoc.count === 'function' ? await sortearBtnLoc.count().catch(() => 0) : 0;
+
+          if (sortCount > 0) {
+            const sortearBtn = typeof sortearBtnLoc.first === 'function' ? sortearBtnLoc.first() : sortearBtnLoc;
+            console.log('Clicking "Sortear Ahora" for free boost lucky draw...');
+
+            let targetPage = page;
+            if (typeof page.context === 'function') {
+              const [newPage] = await Promise.all([
+                page.context().waitForEvent('page', { timeout: 5000 }).catch(() => null),
+                sortearBtn.click({ timeout: 5000 }).catch(() => {})
+              ]);
+              if (newPage) targetPage = newPage;
+            } else {
+              try { await sortearBtn.click({ timeout: 5000 }); } catch (e) {}
+            }
+
+            if (typeof targetPage.waitForTimeout === 'function') await targetPage.waitForTimeout(3000);
+
+            // Spin the boost raffle wheel if available
+            try {
+              if (typeof targetPage.locator === 'function') {
+                const startBtnLoc = targetPage.locator('.start-btn, button:has-text("Start"), div:has-text("Start"), [class*="start-btn"]');
+                if (typeof startBtnLoc.count === 'function' && await startBtnLoc.count().catch(() => 0) > 0) {
+                  const startBtn = typeof startBtnLoc.first === 'function' ? startBtnLoc.first() : startBtnLoc;
+                  if (typeof startBtn.isVisible === 'function' && await startBtn.isVisible().catch(() => false)) {
+                    console.log('Clicking "Start" on Boost Raffle wheel...');
+                    await startBtn.click({ timeout: 5000 }).catch(() => {});
+                    if (typeof targetPage.waitForTimeout === 'function') await targetPage.waitForTimeout(5000);
+                    console.log('✅ Boost raffle spin completed!');
+                  }
+                }
+              }
+            } catch (rErr) {
+              console.log('Notice during boost raffle spin:', rErr.message);
+            }
+
+            if (targetPage !== page && typeof targetPage.close === 'function') {
+              await targetPage.close().catch(() => {});
+            }
+          } else {
+            const laterBtnLoc = successDialog.locator('button:has-text("Más tarde"), div:has-text("Más tarde"), .el-dialog__close');
+            if (typeof laterBtnLoc.count === 'function' && await laterBtnLoc.count().catch(() => 0) > 0) {
+              const laterBtn = typeof laterBtnLoc.first === 'function' ? laterBtnLoc.first() : laterBtnLoc;
+              await laterBtn.click({ timeout: 5000 }).catch(() => {});
+            }
+          }
+        }
+      }
+    }
+  } catch (sErr) {
+    console.log('Notice handling boost success modal:', sErr.message);
+  }
+
+  return true;
+}
+
+/**
  * Check if boosts are available on the user's boost page, and grant them to eligible/downloaded models.
  * @param {import('playwright-core').Page} page
  * @param {object} [options]
@@ -1571,40 +1922,9 @@ export async function executeBoost(page, options = {}) {
       await page.waitForTimeout(3000);
       await handleAccountSelection(page);
 
-      const boostSelectors = [
-        'button:has-text("Boost")',
-        'button:has-text("Impulsar")',
-        '.boost-btn',
-        '[class*="boost-btn"]',
-        '[class*="boost_btn"]'
-      ];
-
-      for (const sel of boostSelectors) {
-        const bBtn = page.locator(sel);
-        if (await bBtn.count().catch(() => 0) > 0) {
-          const el = bBtn.first();
-          if (await el.isVisible().catch(() => false)) {
-            console.log(`Clicking Boost button on model detail page (${sel})...`);
-            try {
-              await el.click({ timeout: 5000 });
-            } catch (e) { }
-            if (typeof page.waitForTimeout === 'function') {
-              await page.waitForTimeout(2000);
-            }
-
-            // Confirm boost modal
-            const confirmLoc = page.locator('.el-dialog button:has-text("Confirm"), .el-dialog button:has-text("Confirmar"), .el-dialog button:has-text("Impulsar"), .el-dialog .el-button--primary, [role="dialog"] button:has-text("Confirm")');
-            if (await confirmLoc.count().catch(() => 0) > 0) {
-              console.log('Confirming boost modal...');
-              try {
-                await confirmLoc.first().click({ timeout: 5000 });
-              } catch (e) { }
-            }
-
-            boostsGiven++;
-            break;
-          }
-        }
+      const boosted = await applyBoostToModel(page);
+      if (boosted) {
+        boostsGiven++;
       }
     }
   }
@@ -1801,6 +2121,8 @@ export async function getIncentiveTasks(page, options = {}) {
             key = 'TEXT_COMMENT';
           } else if (lowerTitle.includes('like 3d model') || lowerTitle.includes('me gusta')) {
             key = 'LIKE_MODEL';
+          } else if (lowerTitle.includes('collection models') || lowerTitle.includes('colección') || lowerTitle.includes('coleccion')) {
+            key = 'COLLECTION_MODELS';
           }
 
           result.push({
@@ -1863,6 +2185,7 @@ export async function clickIncentiveTaskAction(page, taskKey) {
         if (taskKey === 'DOWNLOAD_MODELS' && (lower.includes('download models') || lower.includes('descargar'))) matches = true;
         if (taskKey === 'TEXT_COMMENT' && (lower.includes('comment on models') || lower.includes('comentar en modelos'))) matches = true;
         if (taskKey === 'LIKE_MODEL' && (lower.includes('like 3d model') || lower.includes('me gusta'))) matches = true;
+        if (taskKey === 'COLLECTION_MODELS' && (lower.includes('collection') || lower.includes('colecci'))) matches = true;
 
         if (matches) {
           const btn = itemLoc.nth(i).locator('.do-task-btn, div:has-text("Por completar"), button:has-text("Por completar")').first();
@@ -1893,6 +2216,7 @@ export async function clickIncentiveTaskAction(page, taskKey) {
           if (targetKey === 'DOWNLOAD_MODELS' && (text.includes('download models') || text.includes('descargar'))) matches = true;
           if (targetKey === 'TEXT_COMMENT' && (text.includes('comment on models') || text.includes('comentar en modelos'))) matches = true;
           if (targetKey === 'LIKE_MODEL' && (text.includes('like 3d model') || text.includes('me gusta'))) matches = true;
+          if (targetKey === 'COLLECTION_MODELS' && (text.includes('collection') || text.includes('colecci'))) matches = true;
 
           if (matches) {
             const btn = item.querySelector('.do-task-btn') || Array.from(item.querySelectorAll('div, button, a')).find(el => el.innerText.trim() === 'Por completar');
@@ -1927,6 +2251,17 @@ export async function clickIncentiveTaskAction(page, taskKey) {
 export async function extractModelsFromCurrentPage(page, limit = 20) {
   try {
     if (typeof page.evaluate !== 'function') return [];
+
+    // Scroll progressively to reveal more models if currently fewer than requested
+    for (let s = 0; s < 4; s++) {
+      const currentCount = await page.evaluate(() => {
+        return document.querySelectorAll('a[href*="/model-detail/"], a[href*="/model/"]').length;
+      }).catch(() => 0);
+      if (currentCount >= limit) break;
+      await page.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
+      if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(800);
+    }
+
     const models = await page.evaluate((maxLimit) => {
       const anchors = Array.from(document.querySelectorAll('a[href*="/model-detail/"], a[href*="/model/"]'));
       const seen = new Set();
@@ -2023,6 +2358,9 @@ export async function executeDailyModelTasks(page, options = {}) {
   const targetTextComments = enableTextComment ? (options.textCommentsCount !== undefined ? options.textCommentsCount : 1) : 0;
 
   const enableBoost = options.enableBoost !== false;
+  const enableCollection = options.enableCollection !== false;
+  const targetCollections = enableCollection ? (options.collectionsCount !== undefined ? options.collectionsCount : 1) : 0;
+
   const imagePath = options.imagePath || DEFAULT_THUMBS_UP_IMAGE;
   const trackingFile = options.trackingFile || DOWNLOADS_TRACKING_FILE;
 
@@ -2034,6 +2372,7 @@ export async function executeDailyModelTasks(page, options = {}) {
   console.log(`  - Comments with Image:${targetImageComments}`);
   console.log(`  - Text Comments:      ${targetTextComments}`);
   console.log(`  - Auto Boost:         ${enableBoost ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`  - Collection Models:  ${enableCollection ? targetCollections : 'DISABLED'}`);
 
   let availableBoosts = 0;
   if (enableBoost) {
@@ -2064,14 +2403,16 @@ export async function executeDailyModelTasks(page, options = {}) {
     downloads: { target: targetDownloads, completed: 0 },
     imageComments: { target: targetImageComments, completed: 0 },
     textComments: { target: targetTextComments, completed: 0 },
-    boosts: { target: targetBoosts, completed: 0 }
+    boosts: { target: targetBoosts, completed: 0 },
+    collections: { target: targetCollections, completed: 0 }
   };
 
   const allQuotasMet = () => {
     return quotas.downloads.completed >= quotas.downloads.target &&
       quotas.imageComments.completed >= quotas.imageComments.target &&
       quotas.textComments.completed >= quotas.textComments.target &&
-      quotas.boosts.completed >= quotas.boosts.target;
+      quotas.boosts.completed >= quotas.boosts.target &&
+      quotas.collections.completed >= quotas.collections.target;
   };
 
   if (allQuotasMet()) {
@@ -2101,7 +2442,7 @@ export async function executeDailyModelTasks(page, options = {}) {
       console.log(`\n=====================================================`);
       console.log(`Processing Model [${i + 1}/${candidates.length}]: ${candidate.id}`);
       console.log(`URL: ${candidate.url}`);
-      console.log(`Quotas remaining -> Downloads: ${quotas.downloads.completed}/${quotas.downloads.target}, Image Comments: ${quotas.imageComments.completed}/${quotas.imageComments.target}, Text: ${quotas.textComments.completed}/${quotas.textComments.target}, Boosts: ${quotas.boosts.completed}/${quotas.boosts.target}`);
+      console.log(`Quotas remaining -> Downloads: ${quotas.downloads.completed}/${quotas.downloads.target}, Image Comments: ${quotas.imageComments.completed}/${quotas.imageComments.target}, Text: ${quotas.textComments.completed}/${quotas.textComments.target}, Boosts: ${quotas.boosts.completed}/${quotas.boosts.target}, Collections: ${quotas.collections.completed}/${quotas.collections.target}`);
       console.log(`=====================================================`);
 
       try {
@@ -2162,28 +2503,21 @@ export async function executeDailyModelTasks(page, options = {}) {
 
         if (quotas.boosts.completed < quotas.boosts.target) {
           console.log(`[Task: Boost] Granting boost ticket to model ${candidate.id}...`);
-          const boostSelectors = ['button:has-text("Boost")', 'button:has-text("Impulsar")', '.boost-btn', '[class*="boost-btn"]', '[class*="boost_btn"]'];
-          let boosted = false;
-          for (const sel of boostSelectors) {
-            const bBtn = page.locator(sel);
-            if (await bBtn.count().catch(() => 0) > 0) {
-              const el = bBtn.first();
-              if (await el.isVisible().catch(() => false)) {
-                try { await el.click({ timeout: 5000 }); } catch (e) { }
-                if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(2000);
-                const confirmLoc = page.locator('.el-dialog button:has-text("Confirm"), .el-dialog button:has-text("Confirmar"), .el-dialog button:has-text("Impulsar"), .el-dialog .el-button--primary, [role="dialog"] button:has-text("Confirm")');
-                if (await confirmLoc.count().catch(() => 0) > 0) {
-                  try { await confirmLoc.first().click({ timeout: 5000 }); } catch (e) { }
-                }
-                boosted = true;
-                break;
-              }
-            }
-          }
+          const boosted = await applyBoostToModel(page);
           if (boosted) {
             quotas.boosts.completed++;
             modelActions.boosted = true;
             console.log(`✅ [Boosts: ${quotas.boosts.completed}/${quotas.boosts.target}] Boost granted to model ${candidate.id}.`);
+          }
+        }
+
+        if (quotas.collections.completed < quotas.collections.target) {
+          console.log(`[Task: Collection] Adding model ${candidate.id} to collection...`);
+          const collected = await collectModel(page);
+          if (collected) {
+            quotas.collections.completed++;
+            modelActions.collected = true;
+            console.log(`✅ [Collections: ${quotas.collections.completed}/${quotas.collections.target}] Model added to collection.`);
           }
         }
 
@@ -2198,7 +2532,7 @@ export async function executeDailyModelTasks(page, options = {}) {
 
     const success = (quotas.downloads.target === 0 || quotas.downloads.completed > 0) &&
       (quotas.imageComments.target === 0 || quotas.imageComments.completed > 0);
-    const summaryMessage = `Daily model tasks: ${quotas.downloads.completed}/${quotas.downloads.target} downloads & likes, ${quotas.imageComments.completed}/${quotas.imageComments.target} image comments, ${quotas.textComments.completed}/${quotas.textComments.target} text comment, ${quotas.boosts.completed}/${quotas.boosts.target} boosts.`;
+    const summaryMessage = `Daily model tasks: ${quotas.downloads.completed}/${quotas.downloads.target} downloads & likes, ${quotas.imageComments.completed}/${quotas.imageComments.target} image comments, ${quotas.textComments.completed}/${quotas.textComments.target} text comment, ${quotas.boosts.completed}/${quotas.boosts.target} boosts, ${quotas.collections.completed}/${quotas.collections.target} collections.`;
     return { success, quotas, modelsProcessed, message: summaryMessage };
   }
 
@@ -2209,7 +2543,7 @@ export async function executeDailyModelTasks(page, options = {}) {
   }
 
   let usedIncentiveWorkflow = false;
-  for (let pass = 1; pass <= 6; pass++) {
+  for (let pass = 1; pass <= 15; pass++) {
     console.log(`\n--- Incentive Task Pass #${pass} ---`);
     const tasks = await getIncentiveTasks(page, { forceReload: pass > 1, maxRetries: 3 });
 
@@ -2248,6 +2582,9 @@ export async function executeDailyModelTasks(page, options = {}) {
       } else if (t.key === 'MODEL_BOOST') {
         quotas.boosts.completed = Math.max(quotas.boosts.completed, t.completedCount);
         quotas.boosts.target = t.targetCount;
+      } else if (t.key === 'COLLECTION_MODELS') {
+        quotas.collections.completed = Math.max(quotas.collections.completed, t.completedCount);
+        if (options.collectionsCount === undefined) quotas.collections.target = t.targetCount;
       }
     });
 
@@ -2263,6 +2600,7 @@ export async function executeDailyModelTasks(page, options = {}) {
       }
       if (t.key === 'DOWNLOAD_MODELS') return enableDownloads && quotas.downloads.completed < quotas.downloads.target;
       if (t.key === 'TEXT_COMMENT') return enableTextComment && quotas.textComments.completed < quotas.textComments.target;
+      if (t.key === 'COLLECTION_MODELS') return enableCollection && quotas.collections.completed < quotas.collections.target;
       if (t.key === 'LIKE_MODEL') return enableDownloads;
       return false;
     });
@@ -2302,7 +2640,7 @@ export async function executeDailyModelTasks(page, options = {}) {
         console.log(`Navigating to downloaded models list: ${userDownloadsUrl}...`);
         await page.goto(userDownloadsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
-      } else if (activeTask.key === 'DOWNLOAD_MODELS') {
+      } else if (activeTask.key === 'DOWNLOAD_MODELS' || activeTask.key === 'COLLECTION_MODELS' || activeTask.key === 'LIKE_MODEL') {
         await page.goto(DEFAULT_DISCOVERY_URLS[0], { waitUntil: 'domcontentloaded', timeout: 30000 });
         if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
       }
@@ -2355,24 +2693,7 @@ export async function executeDailyModelTasks(page, options = {}) {
           if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
           await ensureAuthenticated(page);
 
-          const boostSelectors = ['button:has-text("Boost")', 'button:has-text("Impulsar")', '.boost-btn', '[class*="boost-btn"]', '[class*="boost_btn"]'];
-          let boosted = false;
-          for (const sel of boostSelectors) {
-            const bBtn = page.locator(sel);
-            if (await bBtn.count().catch(() => 0) > 0) {
-              const el = bBtn.first();
-              if (await el.isVisible().catch(() => false)) {
-                await el.click({ timeout: 5000 });
-                if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(2000);
-                const confirmLoc = page.locator('.el-dialog button:has-text("Confirm"), .el-dialog button:has-text("Confirmar"), .el-dialog button:has-text("Impulsar"), .el-dialog .el-button--primary, [role="dialog"] button:has-text("Confirm")');
-                if (await confirmLoc.count().catch(() => 0) > 0) {
-                  await confirmLoc.first().click({ timeout: 5000 }).catch(() => { });
-                }
-                boosted = true;
-                break;
-              }
-            }
-          }
+          const boosted = await applyBoostToModel(page);
           if (boosted) {
             done++;
             quotas.boosts.completed++;
@@ -2405,6 +2726,79 @@ export async function executeDailyModelTasks(page, options = {}) {
           }
         } catch (err) {
           console.error(`Error downloading model ${m.id}:`, err.message);
+        }
+      }
+
+      if (done < needed) {
+        console.log(`Need ${needed - done} more downloads. Discovering more models from catalog...`);
+        const moreCandidates = await discoverModelUrls(page, (needed - done) + 5, options.categoryUrl, trackingFile);
+        for (const m of moreCandidates) {
+          if (done >= needed) break;
+          console.log(`\n[Download: ${done + 1}/${needed}] Navigating to model ${m.id}...`);
+          try {
+            await page.goto(m.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+            await ensureAuthenticated(page);
+
+            const dlRes = await downloadModel(page);
+            const liked = await likeModel(page);
+            if (dlRes.success) {
+              done++;
+              quotas.downloads.completed++;
+              recordModelAction(downloadedStore, m, { downloaded: true, liked }, trackingFile);
+              modelsProcessed.push({ id: m.id, url: m.url, actions: { downloaded: true, liked } });
+              console.log(`✅ [Downloads: ${quotas.downloads.completed}/${quotas.downloads.target}] Model downloaded.`);
+            }
+          } catch (err) {
+            console.error(`Error downloading model ${m.id}:`, err.message);
+          }
+        }
+      }
+    } else if (activeTask.key === 'COLLECTION_MODELS') {
+      let done = 0;
+      for (const m of candidateList) {
+        if (done >= needed) break;
+        console.log(`\n[Collection: ${done + 1}/${needed}] Navigating to model ${m.id}...`);
+        try {
+          await page.goto(m.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+          await ensureAuthenticated(page);
+
+          const collected = await collectModel(page);
+          if (collected) {
+            done++;
+            quotas.collections.completed++;
+            recordModelAction(downloadedStore, m, { collected: true }, trackingFile);
+            modelsProcessed.push({ id: m.id, url: m.url, actions: { collected: true } });
+            console.log(`✅ [Collections: ${quotas.collections.completed}/${quotas.collections.target}] Model collected.`);
+          }
+        } catch (err) {
+          console.error(`Error collecting model ${m.id}:`, err.message);
+        }
+      }
+
+      if (done < needed) {
+        console.log(`Need ${needed - done} more collections. Discovering more models from catalog...`);
+        const moreCandidates = await discoverModelUrls(page, (needed - done) + 5, options.categoryUrl, trackingFile);
+        for (const m of moreCandidates) {
+          if (done >= needed) break;
+          console.log(`\n[Collection: ${done + 1}/${needed}] Navigating to model ${m.id}...`);
+          try {
+            await page.goto(m.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+            await ensureAuthenticated(page);
+
+            const collected = await collectModel(page);
+            if (collected) {
+              done++;
+              quotas.collections.completed++;
+              recordModelAction(downloadedStore, m, { collected: true }, trackingFile);
+              modelsProcessed.push({ id: m.id, url: m.url, actions: { collected: true } });
+              console.log(`✅ [Collections: ${quotas.collections.completed}/${quotas.collections.target}] Model collected.`);
+            }
+          } catch (err) {
+            console.error(`Error collecting model ${m.id}:`, err.message);
+          }
         }
       }
     } else if (activeTask.key === 'TEXT_COMMENT') {
@@ -2441,7 +2835,7 @@ export async function executeDailyModelTasks(page, options = {}) {
   // Fallback to legacy single-pass discovery if incentive workflow could not run
   if (!usedIncentiveWorkflow) {
     console.log('Running legacy discovery model workflow...');
-    const needed = Math.max(targetDownloads, targetImageComments, targetTextComments, 10) + 5;
+    const needed = Math.max(targetDownloads, targetImageComments, targetTextComments, targetCollections, 10) + 5;
     const candidates = await discoverModelUrls(page, needed, options.categoryUrl, trackingFile);
 
     for (let i = 0; i < candidates.length; i++) {
@@ -2458,7 +2852,7 @@ export async function executeDailyModelTasks(page, options = {}) {
           continue;
         }
 
-        const modelActions = { downloaded: false, liked: false, imageComment: false, textComment: false, boosted: false };
+        const modelActions = { downloaded: false, liked: false, imageComment: false, textComment: false, boosted: false, collected: false };
         if (quotas.downloads.completed < quotas.downloads.target) {
           const dlRes = await downloadModel(page);
           if (dlRes.success) {
@@ -2469,6 +2863,14 @@ export async function executeDailyModelTasks(page, options = {}) {
 
         const liked = await likeModel(page);
         if (liked) modelActions.liked = true;
+
+        if (quotas.collections.completed < quotas.collections.target) {
+          const collected = await collectModel(page);
+          if (collected) {
+            quotas.collections.completed++;
+            modelActions.collected = true;
+          }
+        }
 
         if (quotas.textComments.completed < quotas.textComments.target) {
           const textRes = await executeTextComment(page, { modelUrl: candidate.url, skipNavigation: true });
@@ -2495,7 +2897,7 @@ export async function executeDailyModelTasks(page, options = {}) {
   const success = (quotas.downloads.target === 0 || quotas.downloads.completed > 0) ||
     (quotas.imageComments.target === 0 || quotas.imageComments.completed > 0);
 
-  const summaryMessage = `Daily model tasks: ${quotas.downloads.completed}/${quotas.downloads.target} downloads & likes, ${quotas.imageComments.completed}/${quotas.imageComments.target} image comments, ${quotas.textComments.completed}/${quotas.textComments.target} text comment, ${quotas.boosts.completed}/${quotas.boosts.target} boosts.`;
+  const summaryMessage = `Daily model tasks: ${quotas.downloads.completed}/${quotas.downloads.target} downloads & likes, ${quotas.imageComments.completed}/${quotas.imageComments.target} image comments, ${quotas.textComments.completed}/${quotas.textComments.target} text comment, ${quotas.boosts.completed}/${quotas.boosts.target} boosts, ${quotas.collections.completed}/${quotas.collections.target} collections.`;
 
   console.log(`\n=====================================================`);
   console.log(`Result: ${summaryMessage}`);

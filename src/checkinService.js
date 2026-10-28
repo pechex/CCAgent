@@ -399,175 +399,209 @@ export async function isLoggedIn(page) {
  * @param {import('playwright-core').Page} page 
  * @returns {Promise<{success: boolean, message: string, screenshotPath?: string}>}
  */
-export async function executeCheckin(page) {
+export async function executeCheckin(page, options = {}) {
+  const maxRetries = options.maxRetries || 3;
   const url = 'https://www.crealitycloud.com/check-in';
-  console.log(`Navigating to ${url}...`);
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-  // Verify login status, attempting automatic restoration if session is lost
-  let loggedIn = await isLoggedIn(page);
-  if (!loggedIn) {
-    console.log('User is not logged in. Attempting automatic session restoration...');
-    loggedIn = await restoreSession(page);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    console.log(`\n[Check-in] Attempt ${attempt}/${maxRetries}: Navigating to ${url}...`);
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(4000);
 
-    // If successfully restored, ensure we are on the check-in page
-    if (loggedIn) {
-      const currentUrl = typeof page.url === 'function' ? page.url() : '';
-      if (!currentUrl.includes('check-in')) {
-        console.log(`Navigating back to check-in page from ${currentUrl}...`);
-        await page.goto(url, { waitUntil: 'domcontentloaded' });
+      // Verify login status, attempting automatic restoration if session is lost
+      let loggedIn = await isLoggedIn(page);
+      if (!loggedIn) {
+        console.log('[Check-in] User is not logged in. Attempting automatic session restoration...');
+        loggedIn = await restoreSession(page);
+
+        if (loggedIn) {
+          const currentUrl = typeof page.url === 'function' ? page.url() : '';
+          if (!currentUrl.includes('check-in')) {
+            console.log(`[Check-in] Navigating back to check-in page from ${currentUrl}...`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+            if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+          }
+        }
+      }
+
+      if (!loggedIn) {
+        const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-failed.png');
+        if (typeof page.screenshot === 'function') {
+          await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+        }
+        return {
+          success: false,
+          message: 'User is not logged in and session could not be restored automatically. Please run npm run login first to log in manually.',
+          screenshotPath
+        };
+      }
+
+      console.log('[Check-in] User is logged in. Searching for check-in elements...');
+
+      // Helper for safe screenshot handling that works with mock pages and real Playwright
+      const takeSafeScreenshot = async (filePath) => {
+        if (typeof page.screenshot === 'function') {
+          try {
+            const res = page.screenshot({ path: filePath, fullPage: true });
+            if (res && typeof res.catch === 'function') await res.catch(() => {});
+            else if (res && typeof res.then === 'function') await res;
+          } catch (e) {}
+        }
+      };
+
+      // Creality Cloud often renders content inside an iframe-box
+      let iframeLocator = page.locator('iframe.iframe-box');
+      let iframeExists = await iframeLocator.count().catch(() => 0) > 0;
+      if (!iframeExists) {
+        iframeLocator = page.locator('iframe[class*="iframe"]');
+        iframeExists = await iframeLocator.count().catch(() => 0) > 0;
+      }
+      const containers = [];
+      if (iframeExists && typeof page.frameLocator === 'function') {
+        const fl = page.frameLocator('iframe.iframe-box');
+        containers.push(typeof fl.first === 'function' ? fl.first() : fl);
+      }
+      containers.push(page);
+
+      // Wait briefly for elements to load
+      if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(3000);
+
+      for (const container of containers) {
+        // Look for buttons or interactive elements containing check-in keywords
+        let checkinLocator = container.locator('.sign-in-btn, button, [role="button"], a').filter({
+          hasText: /check|fichar|registrar/i
+        });
+
+        let count = await checkinLocator.count().catch(() => 0);
+        if (count === 0) {
+          checkinLocator = container.locator('div[class*="btn"], div[class*="button"]').filter({
+            hasText: /check|fichar|registrar/i
+          });
+          count = await checkinLocator.count().catch(() => 0);
+        }
+
+        for (let i = 0; i < count; i++) {
+          const element = checkinLocator.nth(i);
+          const text = (await element.textContent().catch(() => '') || '').trim();
+          const isVisible = await element.isVisible().catch(() => false);
+
+          if (isVisible && text && text.length < 100) {
+            // Check if already checked in today (English or Spanish)
+            if (/Checked|Registrado|Fichado|Ya registrado/i.test(text)) {
+              const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
+              await takeSafeScreenshot(screenshotPath);
+              console.log(`[Check-in] Already checked in today! (Found: "${text}")`);
+              return {
+                success: true,
+                message: `Already checked in today! (Found: "${text}")`
+              };
+            }
+
+            // Check if button can be clicked to check in
+            if (/Check[ -]*in|Fichar|Registrarse|Registrar/i.test(text) && !/Iniciar sesi[oó]n/i.test(text)) {
+              console.log(`[Check-in] Clicking check-in button: "${text}"...`);
+
+              await element.scrollIntoViewIfNeeded().catch(() => {});
+              try {
+                await element.click({ force: true, timeout: 5000 });
+              } catch (clickErr) {
+                const cleanErr = (clickErr.message || '').split('\n')[0];
+                console.log(`Playwright click failed: ${cleanErr}. Retrying via DOM click...`);
+                await element.evaluate(node => node.click()).catch(() => {});
+              }
+
+              if (typeof page.waitForTimeout === 'function') await page.waitForTimeout(5000);
+
+              // Look for reward details
+              let rewardText = '';
+              try {
+                const modalLocator = container.locator('div, span, p').filter({
+                  hasText: /congratulations|felicidades|enhorabuena/i
+                });
+                const mCount = await modalLocator.count().catch(() => 0);
+                for (let j = 0; j < mCount; j++) {
+                  const mEl = modalLocator.nth(j);
+                  const mText = (await mEl.textContent().catch(() => '') || '').trim();
+                  if (await mEl.isVisible().catch(() => false) && mText && mText.length < 200) {
+                    rewardText = mText.replace(/\s+/g, ' ');
+                    break;
+                  }
+                }
+
+                if (!rewardText) {
+                  const pointsLocator = container.locator('div, span, p').filter({
+                    hasText: /x\s*\d+/i
+                  });
+                  const pCount = await pointsLocator.count().catch(() => 0);
+                  for (let j = 0; j < pCount; j++) {
+                    const pEl = pointsLocator.nth(j);
+                    const pText = (await pEl.textContent().catch(() => '') || '').trim();
+                    if (await pEl.isVisible().catch(() => false) && /^x\s*\d+$/i.test(pText)) {
+                      rewardText = pText;
+                      break;
+                    }
+                  }
+                }
+              } catch (err) {}
+
+              const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
+              await takeSafeScreenshot(screenshotPath);
+              console.log(`Screenshot saved to ${screenshotPath}`);
+
+              const rewardMsg = rewardText ? ` (Obtained: "${rewardText}")` : '';
+              return {
+                success: true,
+                message: `Successfully clicked check-in button: "${text}"${rewardMsg}`
+              };
+            }
+          }
+        }
+
+        // Fallback inside container: check for "Checked", "Registrado", or streak text
+        let containerText = '';
+        try {
+          containerText = await (typeof container.locator === 'function' ? container.locator('body').innerText().catch(() => '') : '');
+        } catch (err) {}
+
+        if (/Checked|Registrado|Fichado|Ya registrado|Racha de \d+ d/i.test(containerText)) {
+          const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
+          await takeSafeScreenshot(screenshotPath);
+          console.log(`[Check-in] Already checked in today! (Found status text on page)`);
+          return {
+            success: true,
+            message: 'Already checked in today! (Found "Checked" / "Registrado" status on the page)'
+          };
+        }
+      }
+
+      console.log(`[Check-in] Attempt ${attempt}/${maxRetries} did not detect check-in button or status.`);
+      if (attempt < maxRetries && typeof page.waitForTimeout === 'function') {
+        await page.waitForTimeout(3000);
+      }
+    } catch (err) {
+      console.error(`[Check-in] Error on attempt ${attempt}/${maxRetries}:`, err.message);
+      if (attempt < maxRetries && typeof page.waitForTimeout === 'function') {
         await page.waitForTimeout(3000);
       }
     }
   }
 
-  if (!loggedIn) {
-    const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-failed.png');
-    if (typeof page.screenshot === 'function') {
-      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-    }
-    return {
-      success: false,
-      message: 'User is not logged in and session could not be restored automatically. Please run npm run login first to log in manually.',
-      screenshotPath
-    };
-  }
-
-  console.log('User is logged in. Searching for check-in elements...');
-
-  // Wait for the iframe container if it exists (Creality Cloud renders content inside an iframe-box)
-  const iframeLocator = page.locator('iframe.iframe-box');
-  const iframeExists = await iframeLocator.count() > 0;
-  
-  const container = iframeExists ? page.frameLocator('iframe.iframe-box') : page;
-  
-  // Wait briefly for elements to load inside the container
-  await page.waitForTimeout(3000);
-
-  // Look for elements that contain "check", "fichar", or "registrar" inside the container
-  const checkinLocator = container.locator('.sign-in-btn, button, [role="button"], a').filter({
-    hasText: /check|fichar|registrar/i
-  });
-
-  const count = await checkinLocator.count();
-
-  for (let i = 0; i < count; i++) {
-    const element = checkinLocator.nth(i);
-    const text = (await element.textContent() || '').trim();
-    const isVisible = await element.isVisible();
-    
-    // Ignore massive texts from container elements
-    if (isVisible && text && text.length < 100) {
-      // If we are already checked in
-      if (/Checked/i.test(text)) {
-        // Take a screenshot of the checked-in state for confirmation
-        const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
-        await page.screenshot({ path: screenshotPath, fullPage: true });
-        console.log(`Screenshot saved to ${screenshotPath}`);
-
-        return {
-          success: true,
-          message: `Already checked in today! (Found: "${text}")`
-        };
-      }
-      
-      // If we need to check in (match "check in", "check-in", "checkin", "fichar")
-      if (/Check[ -]*in/i.test(text) || /Fichar/i.test(text)) {
-        console.log(`Clicking check-in button: "${text}"...`);
-        
-        // Ensure element is scrolled into view (particularly inside scrollable iframes)
-        await element.scrollIntoViewIfNeeded().catch(() => {});
-        
-        try {
-          await element.click({ force: true, timeout: 5000 });
-        } catch (clickErr) {
-          const cleanErr = (clickErr.message || '').split('\n')[0];
-          console.log(`Playwright click failed: ${cleanErr}. Retrying via DOM click...`);
-          await element.evaluate(node => node.click());
-        }
-        
-        // Wait for potential modal or confirmation to show up
-        await page.waitForTimeout(5000);
-        
-        // Look for point indicators or popups (e.g. "Congratulations! x100 Done")
-        let rewardText = '';
-        try {
-          // 1. Look for Congratulations modal text
-          const modalLocator = container.locator('div, span, p').filter({
-            hasText: /congratulations/i
-          });
-          const mCount = await modalLocator.count();
-          for (let j = 0; j < mCount; j++) {
-            const mEl = modalLocator.nth(j);
-            const mText = (await mEl.textContent() || '').trim();
-            const mVisible = await mEl.isVisible();
-            if (mVisible && mText && mText.length < 200) {
-              // Clean up extra whitespaces/newlines for a readable single line
-              rewardText = mText.replace(/\s+/g, ' ');
-              break;
-            }
-          }
-          
-          // 2. Fallback: Search for point badges like "x100"
-          if (!rewardText) {
-            const pointsLocator = container.locator('div, span, p').filter({
-              hasText: /x\s*\d+/i
-            });
-            const pCount = await pointsLocator.count();
-            for (let j = 0; j < pCount; j++) {
-              const pEl = pointsLocator.nth(j);
-              const pText = (await pEl.textContent() || '').trim();
-              const pVisible = await pEl.isVisible();
-              if (pVisible && pText && pText.length < 15 && /^x\s*\d+$/i.test(pText)) {
-                rewardText = pText;
-                break;
-              }
-            }
-          }
-        } catch (err) {
-          console.log('Error scanning for reward details:', err.message);
-        }
-        
-        // Take a screenshot after clicking
-        const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
-        await page.screenshot({ path: screenshotPath, fullPage: true });
-        console.log(`Screenshot saved to ${screenshotPath}`);
-
-        const rewardMsg = rewardText ? ` (Obtained: "${rewardText}")` : '';
-        return {
-          success: true,
-          message: `Successfully clicked check-in button: "${text}"${rewardMsg}`
-        };
-      }
-    }
-  }
-
-  // Fallback: Check if the text "Checked" is present inside the container
-  let containerText = '';
-  try {
-    containerText = await (iframeExists ? page.frameLocator('iframe.iframe-box').locator('body').innerText() : page.innerText('body'));
-  } catch (err) {}
-
-  if (/Checked/i.test(containerText)) {
-    const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-success.png');
-    await page.screenshot({ path: screenshotPath, fullPage: true });
-    console.log(`Screenshot saved to ${screenshotPath}`);
-
-    return {
-      success: true,
-      message: 'Already checked in today! (Found "Checked" status on the page)'
-    };
-  }
-
-  // Save screenshot of current state for troubleshooting
+  // Save screenshot of final failed state for troubleshooting
   const screenshotPath = path.join(USER_SESSION_DIR, 'checkin-failed.png');
-  await page.screenshot({ path: screenshotPath, fullPage: true });
+  if (typeof page.screenshot === 'function') {
+    try {
+      const res = page.screenshot({ path: screenshotPath, fullPage: true });
+      if (res && typeof res.catch === 'function') await res.catch(() => {});
+      else if (res && typeof res.then === 'function') await res;
+    } catch (e) {}
+  }
   console.log(`Troubleshooting screenshot saved to ${screenshotPath}`);
 
   return {
     success: false,
-    message: 'Could not find any visible check-in button or "Checked" status on the page. Screenshot saved for review.',
-    screenshotPath: screenshotPath
+    message: 'Could not find any visible check-in button or "Checked" status on the page after retries. Screenshot saved for review.',
+    screenshotPath
   };
 }
 
